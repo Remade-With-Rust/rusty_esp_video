@@ -1,0 +1,30 @@
+[package]
+name = "rusty_esp_video"
+description = "esp_video / esp_h264 / CameraWebServer remade in Rust: MJPEG and H.264 (rusty_h264 embedded) encode, RTP + MJPEG-over-HTTP packetizers, P4 hardware encoder wrap. Memory safe, no_std core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+readme = "../../README.md"
+documentation = "https://docs.rs/rusty_esp_video"
+keywords = ["esp32", "embedded", "no-std", "mata", "remade-with-rust"]
+categories = ["embedded", "no-std", "hardware-support"]
+
+[features]
+default = ["std"]
+std = ["rusty_esp_video-core/std", "rusty_esp_video-esp/std"]
+alloc = ["rusty_esp_video-core/alloc"]
+# Track B: bare metal, esp-hal + Embassy.
+esp-hal = ["rusty_esp_video-esp/esp-hal"]
+# Track A: std on ESP-IDF via esp-idf-svc.
+esp-idf = ["rusty_esp_video-esp/esp-idf"]
+
+[dependencies]
+rusty_esp_video-core = { workspace = true }
+rusty_esp_video-esp = { workspace = true }
+
+[lints]
+workspace = true

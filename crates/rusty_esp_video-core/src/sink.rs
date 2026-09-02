@@ -120,7 +120,8 @@ mod tests {
         assert_eq!((c.bytes, c.writes), (15, 2));
         let mut v = alloc::vec::Vec::new();
         let mut by_ref: &mut alloc::vec::Vec<u8> = &mut v;
-        by_ref.write(b"ab").unwrap();
+        // the blanket `impl PacketSink for &mut S`, called explicitly
+        PacketSink::write(&mut by_ref, b"ab").unwrap();
         v.write(b"c").unwrap();
         assert_eq!(v, b"abc");
     }

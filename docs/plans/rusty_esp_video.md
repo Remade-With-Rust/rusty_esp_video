@@ -10,7 +10,7 @@ Family plan: Janus `docs/plans/janus-mission.md`. Layer 1 · media. Depends on
 `rusty_esp_core` and `rusty_esp_image` (`ImageSource`). Delivery over QUIC is
 `rusty_esp_iroh`'s job; this crate stops at packets.
 
-Written 2026-09-01. Status: **scaffold.**
+Written 2026-09-01. Status: **V0 implemented on the host; gate partly run** (`docs/LEDGER.md`).
 
 ---
 
@@ -79,7 +79,7 @@ testable on the host against fixtures and against `rff`.
 
 | # | Deliverable | Kill test |
 |---|---|---|
-| **V0** | `MediaPacket`, `Passthrough`, `Multipart`, `Mux` (TS), `Rtp` + payloaders, `Pacer`, host tests | a TS file muxed on the host from an Annex-B fixture decodes in `rff` and `ffmpeg` frame-count-identical; the multipart writer's output parses in a browser-equivalent parser fixture |
+| **V0** ◐ 2026-09-01 | `MediaPacket`, `Passthrough` (zero-copy), `PacketSink`, `Multipart`, Annex-B scanner + access-unit splitter, `Rtp` + RFC 6184 / RFC 2435 payloaders, `Mux` (TS) + test demuxer, UDP framer/reassembler, `Pacer`; 18 unit tests | **oracle passed:** a TS muxed from a 12-frame `rusty_h264` stream reads in `ffprobe` as `h264,64,48,12` and round-trips byte-identical through the demuxer into the house decoder; the multipart writer parses in a browser-shaped fixture. **Pending:** clippy + riscv32 checks and the final ffmpeg decode assertion — the host disk filled to zero mid-run (`docs/LEDGER.md`). `rff` playback waits on an `rff` build. |
 | **V1** (J1) | MJPEG over HTTP from XIAO S3 Sense, Track A | `http://device/stream` opens in a browser at 320×240 at a recorded FPS; recorded to disk on a Pi (pi-mission H3) |
 | **V2** | RTP/JPEG (RFC 2435) and raw-UDP framing to a laptop; `Pacer` | a laptop receiver reassembles 10 minutes with the loss counter recorded |
 | **V3** (J5) | `rusty_h264` `no_std` + Baseline I/P at QVGA; H.264 in TS over UDP | `rff -i udp://@:1234` plays it; FPS, bitrate and cycle budget written in the ledger honestly (S3 software) |

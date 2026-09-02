@@ -1,0 +1,48 @@
+# Board record: Seeed Studio XIAO ESP32-S3 Sense.
+# The espino mission (janus/docs/plans/rusty-arduino-mission.md §9) owns the
+# board-record schema; this file is its first instance, kept next to the
+# firmware that uses it until espino exists.
+
+id = "xiao-esp32s3-sense"
+chip = "esp32s3"
+flash_mb = 8
+psram = "octal-8mb"
+usb_jtag = true
+usb_vid_pid = [["303a", "1001"]]
+reset = "usb-jtag"
+strapping_deny = [0, 3, 45, 46]
+partitions = "single_app_large"
+
+[pins]
+led = 21
+i2c_sda = 5
+i2c_scl = 6
+# PDM microphone on the Sense board
+mic_clk = 42
+mic_data = 41
+# SD card (Sense board)
+sd_cs = 21
+
+[camera]
+sensor = "OV2640"
+sccb_addr = 0x30
+xclk = 10
+sccb_sda = 40
+sccb_scl = 39
+d0 = 15
+d1 = 17
+d2 = 18
+d3 = 16
+d4 = 14
+d5 = 12
+d6 = 11
+d7 = 48
+vsync = 38
+href = 47
+pclk = 13
+pwdn = -1
+reset = -1
+
+[hub]
+transports = ["http-mjpeg"]
+adopt = "data-config"

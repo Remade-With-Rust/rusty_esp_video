@@ -9,8 +9,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
 
 [[package]]
+name = "embedded-hal"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+
+[[package]]
 name = "rusty_esp_core"
 version = "0.1.0"
+
+[[package]]
+name = "rusty_esp_image-core"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+ "rusty_esp_core",
+]
 
 [[package]]
 name = "rusty_esp_video"
@@ -25,6 +39,7 @@ name = "rusty_esp_video-core"
 version = "0.1.0"
 dependencies = [
  "rusty_esp_core",
+ "rusty_esp_image-core",
  "rusty_h264",
  "rusty_jpeg",
 ]
@@ -33,7 +48,10 @@ dependencies = [
 name = "rusty_esp_video-esp"
 version = "0.1.0"
 dependencies = [
+ "rusty_esp_core",
+ "rusty_esp_image-core",
  "rusty_esp_video-core",
+ "rusty_jpeg",
 ]
 
 [[package]]
@@ -99,3 +117,19 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
+
+[[patch.unused]]
+name = "rusty_esp_image"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "rusty_esp_image-esp"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "rusty_esp_mid"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "rusty_esp_mid-core"
+version = "0.1.0"

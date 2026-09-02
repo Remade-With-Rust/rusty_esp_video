@@ -49,7 +49,13 @@ pub mod rtp        { pub struct Rtp { ssrc, seq, clock_hz }  pub struct H264Fua;
 pub mod mpegts     { pub struct Mux<S: PacketSink> { /* PAT/PMT every N packets, PES, PCR from Micros */ } }
 pub mod udp        { pub struct RawFramer; }  // tiny header: seq, ts, total, index — the Pi-hub UDP recipe
 pub struct Pacer { /* fps cap + drop policy, driven by the Clock seam */ }
+pub trait PacketSource { fn next_packet<'b>(&mut self, scratch: &'b mut [u8]) -> Result<MediaPacket<'b>>; }
+pub struct EncodedSource<S: ImageSource, E: VideoEncoder> { /* the planned video→image edge, paced */ }
 ```
+
+`rusty_esp_video-esp` (built 2026-09-01, feature `std`): `net::{TcpSink,
+MjpegHttpServer, ServeStats, Served}` — the Track A server over `std::net`;
+one viewer at a time; `GET /stream`, `GET /`, 404/405/400.
 
 Rules: encoders write into caller buffers; packetizers write into a
 `PacketSink` in MTU-sized pieces without an intermediate `Vec`; everything is
@@ -80,7 +86,7 @@ testable on the host against fixtures and against `rff`.
 | # | Deliverable | Kill test |
 |---|---|---|
 | **V0** ✅ 2026-09-01 | `MediaPacket`, `Passthrough` (zero-copy), `PacketSink`, `Multipart`, Annex-B scanner + access-unit splitter, `Rtp` + RFC 6184 / RFC 2435 payloaders, `Mux` (TS) + test demuxer, UDP framer/reassembler, `Pacer`; 18 unit + 3 oracle tests | **passed:** a TS muxed from a 12-frame `rusty_h264` stream (14 packets, 2 632 bytes) reads in `ffprobe` as `h264,64,48,12`, decodes in `ffmpeg` with an empty error log, and round-trips byte-identical through the demuxer into the house decoder; the multipart writer parses in a browser-shaped fixture; clippy clean; riscv32 with and without `alloc`. `rff` playback is recorded when an `rff` binary exists on the box (`docs/LEDGER.md`). |
-| **V1** (J1) | MJPEG over HTTP from XIAO S3 Sense, Track A | `http://device/stream` opens in a browser at 320×240 at a recorded FPS; recorded to disk on a Pi (pi-mission H3) |
+| **V1** (J1) ◐ host half 2026-09-01 | MJPEG over HTTP from XIAO S3 Sense, Track A. **Done on the host:** `net::MjpegHttpServer` over `std::net` (the code the board runs), `EncodedSource`, the firmware project `firmware/xiao-s3-sense-idf-mjpeg` (written, first ESP-IDF build pending), ffmpeg reads 8 MJPEG frames from the host server (`docs/LEDGER.md`) | `http://device/stream` opens in a browser at 320×240 at a recorded FPS; recorded to disk on a Pi (pi-mission H3) — **needs the board** |
 | **V2** | RTP/JPEG (RFC 2435) and raw-UDP framing to a laptop; `Pacer` | a laptop receiver reassembles 10 minutes with the loss counter recorded |
 | **V3** (J5) | `rusty_h264` `no_std` + Baseline I/P at QVGA; H.264 in TS over UDP | `rff -i udp://@:1234` plays it; FPS, bitrate and cycle budget written in the ledger honestly (S3 software) |
 | **V4** | P4 hardware encoder behind the same trait; hardware JPEG | side-by-side table: S3 software vs P4 hardware at QVGA/VGA/720p |

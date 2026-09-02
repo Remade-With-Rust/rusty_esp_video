@@ -18,11 +18,25 @@ Every number this package quotes lives here with the run that produced it.
 | CRC-32/MPEG-2 check value for `123456789` = `0x0376E6E7`; PES PTS encoding decodes back | pass |
 | Zero-copy `Passthrough`: the packet points at the frame's own bytes | pass |
 
-Unit tests: **18 pass**. Oracle tests: **3 pass** — the two pure-Rust ones
-and the external one, in which `ffprobe` reports `h264,64,48,12` and
-`ffmpeg -v error -i fixture.ts -f null -` exits 0 with an empty error log.
-Clippy `-D warnings` on all targets is clean; `riscv32imac-unknown-none-elf`
-compiles with `--no-default-features` and with `--features alloc`.
+Unit tests: **20 pass** (the two `source` tests added with the J1 host half).
+Oracle tests: **5 pass** — the TS trio above, in which `ffprobe` reports
+`h264,64,48,12` and `ffmpeg -v error -i fixture.ts -f null -` exits 0 with an
+empty error log, plus the two HTTP-stream oracles below. Clippy `-D warnings`
+on all targets is clean for both the default and the `std` feature set;
+`riscv32imac-unknown-none-elf` compiles with `--no-default-features` and with
+`--features alloc`.
+
+## J1 stream path on the host (2026-09-01)
+
+The Track A server (`rusty_esp_video-esp::net`, plain `std::net`, the same
+code ESP-IDF runs) fed by colour bars encoded to JPEG:
+
+| Gate | Result |
+|---|---|
+| **ffmpeg's MJPEG-over-HTTP demuxer** (what a browser does) opens `/stream`, reads **8 frames** (`-frames:v 8 -f framecrc`), exits 0 with an empty error log; the server had pushed 9 when the client hung up | **pass** |
+| A Rust client reads the response head (`multipart/x-mixed-replace; boundary=janus-frame`) and five parts; every part is exactly one JPEG (`find_eoi` = `Content-Length`) whose header probes to 160×120 | pass |
+| `GET /` returns the viewer page (`text/html`, `<img src="/stream">`); `GET /nope` returns 404; the server's counters agree (3 connections, 1 stream, ≥5 frames) | pass |
+| `EncodedSource`: a 50 fps source capped at 10 fps admits every fifth frame, counts drops, and the JPEG passthrough packet borrows the frame half of scratch | pass |
 
 ## Sizes
 

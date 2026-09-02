@@ -14,6 +14,7 @@
 //! | [`annexb`] | H.264 Annex-B NAL unit scanning (start codes, IDR and AUD detection) |
 //! | [`encoder`] | [`VideoEncoder`], [`EncoderConfig`], the zero-copy JPEG [`Passthrough`] |
 //! | [`sink`] | [`PacketSink`] and the host/test sinks |
+//! | [`source`] | [`PacketSource`] and [`EncodedSource`] — an `ImageSource` joined to a `VideoEncoder`, paced |
 //! | [`mjpeg_http`] | `multipart/x-mixed-replace` — what a browser opens |
 //! | [`rtp`] | RTP headers, RFC 6184 H.264 (single NAL + FU-A) and RFC 2435 JPEG payloaders |
 //! | [`mpegts`] | an MPEG-2 transport stream mux (PAT, PMT, PES, PCR) for H.264 — what `rff -i udp://` reads today |
@@ -36,6 +37,7 @@ pub mod pacer;
 pub mod packet;
 pub mod rtp;
 pub mod sink;
+pub mod source;
 pub mod udp;
 
 pub use encoder::{EncoderConfig, Passthrough, VideoEncoder};
@@ -43,6 +45,7 @@ pub use pacer::Pacer;
 pub use packet::{Codec, MediaPacket};
 pub use rusty_esp_core as esp_core;
 pub use sink::PacketSink;
+pub use source::{EncodedSource, PacketSource};
 
 /// The names a sketch or firmware wants in scope.
 pub mod prelude {
@@ -52,11 +55,18 @@ pub mod prelude {
     pub use crate::pacer::Pacer;
     pub use crate::packet::{Codec, MediaPacket};
     pub use crate::sink::PacketSink;
+    pub use crate::source::{EncodedSource, PacketSource};
     pub use rusty_esp_core::prelude::*;
 }
 
 /// Crate version, for capability manifests and logs.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Write a decimal `u64` into `buf`; returns the digits as a `&str`. No `alloc`.
+/// Public for the backend crate's HTTP responder.
+pub fn fmt_u64_pub(v: u64, buf: &mut [u8; 20]) -> &str {
+    fmt_u64(v, buf)
+}
 
 /// Write a decimal `u64` into `buf`; returns the digits as a `&str`. No `alloc`.
 pub(crate) fn fmt_u64(mut v: u64, buf: &mut [u8; 20]) -> &str {

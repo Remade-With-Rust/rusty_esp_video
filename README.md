@@ -28,8 +28,21 @@ round-trips byte-identical through the crate's own demuxer into the house
 decoder. 18 unit tests and 3 oracle tests pass; clippy is clean; the core
 compiles for riscv32 bare metal with and without `alloc`. See the ledger.
 
-Not yet: the ESP backends (sockets, the MJPEG HTTP responder, the P4 hardware
-encoder) — V1 onward, needing a board — and `rusty_h264` on the chip (V3).
+**J1 host half (2026-09-01):** the Track A stream server exists and is
+proven — `rusty_esp_video-esp::net::MjpegHttpServer` over plain `std::net`
+(what ESP-IDF's `std` gives the chip, so it runs on a laptop today and on the
+board unchanged). ffmpeg's MJPEG demuxer reads 8 frames from it; a Rust
+client checks every part is one JPEG of the right geometry. `EncodedSource`
+joins any `ImageSource` to any `VideoEncoder` with a pacer. The XIAO ESP32-S3
+Sense firmware project is written under `firmware/`. Try the host half:
+
+```sh
+cargo run -p rusty_esp_video-esp --features std --example mjpeg_server -- 127.0.0.1:8080
+# open http://127.0.0.1:8080/  or:  ffmpeg -i http://127.0.0.1:8080/stream -frames:v 30 -f null -
+```
+
+Not yet: the board (flash, the 320×240 frame count on serial, the Pi record
+path), the P4 hardware encoder, and `rusty_h264` on the chip (V3).
 
 ## What is in the core
 
@@ -44,6 +57,10 @@ encoder) — V1 onward, needing a board — and `rusty_h264` on the chip (V3).
 | `mpegts` | `Mux`: PAT, PMT, PES with PTS, PCR, AUD insertion, stuffing — 188-byte packets streamed to a sink; a test/host-side `demux` |
 | `udp` | `Framer` and `Reassembler` for raw datagrams with a 28-byte header |
 | `pacer` | `Pacer`: a frame-rate cap with drop counters |
+| `source` | `PacketSource`; `EncodedSource` — an `ImageSource` joined to a `VideoEncoder`, paced, zero-copy for JPEG |
+
+`rusty_esp_video-esp` (feature `std`): `net::{MjpegHttpServer, TcpSink}` — the
+Track A stream server, one viewer at a time; `examples/mjpeg_server.rs`.
 
 ```rust
 use rusty_esp_video::prelude::*;
@@ -65,7 +82,8 @@ loop {
 ```text
 crates/rusty_esp_video          facade
 crates/rusty_esp_video-core     no_std + alloc; forbid(unsafe); the core above
-crates/rusty_esp_video-esp      the WRAP crate: `esp-hal` | `esp-idf` sockets and hardware encoders (V1+)
+crates/rusty_esp_video-esp      the WRAP crate: `net` (Track A server over std::net), `esp-idf`, `esp-hal`
+firmware/xiao-s3-sense-idf-mjpeg the J1 firmware project (ESP-IDF, Xtensa): written, awaiting its first build and a board
 docs/plans/rusty_esp_video.md   the plan · docs/LEDGER.md the numbers
 ```
 

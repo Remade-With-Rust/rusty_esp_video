@@ -1,6 +1,6 @@
 [package]
 name = "rusty_esp_video-esp"
-description = "Chip backends for rusty_esp_video: the WRAP crate. `esp-hal` (Track B, no_std + Embassy) or `esp-idf` (Track A, std on ESP-IDF). The only crate in the workspace allowed a fenced unsafe block, and only at a DMA or FFI boundary."
+description = "Chip backends for rusty_esp_video: the WRAP crate. The Track A stream server over std::net (what ESP-IDF's std gives the chip, so it runs on the host unchanged), `esp-idf` for the IDF-only pieces, `esp-hal` for bare metal. The only crate in the workspace allowed a fenced unsafe block, and only at an FFI boundary."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,22 +10,35 @@ authors.workspace = true
 rust-version.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/rusty_esp_video-esp"
-keywords = ["esp32", "embedded", "esp-hal", "esp-idf", "remade-with-rust"]
-categories = ["embedded", "no-std", "hardware-support"]
+keywords = ["esp32", "embedded", "esp-idf", "mjpeg", "remade-with-rust"]
+categories = ["embedded", "no-std", "multimedia::video"]
 
 [features]
 default = []
+# `std` brings the Track A stream server (`net`): std::net sockets, the MJPEG
+# HTTP responder, a TCP sink. It is the same code on the host and on ESP-IDF.
 std = ["rusty_esp_video-core/std"]
 alloc = ["rusty_esp_video-core/alloc"]
-# Track B — bare metal: esp-hal + Embassy. The esp-hal / esp-radio / esp-alloc
-# dependencies land behind this feature with the first driver, pinned to the
-# versions recorded in the plan.
-esp-hal = ["alloc"]
-# Track A — std on ESP-IDF via esp-idf-svc. Same rule.
+# Track A — std on ESP-IDF: IDF-only pieces (Wi-Fi bring-up helpers land here).
 esp-idf = ["std"]
+# Track B — bare metal: embassy-net sockets land here with their esp-hal pin.
+esp-hal = ["alloc"]
 
 [dependencies]
 rusty_esp_video-core = { workspace = true }
+
+[dev-dependencies]
+rusty_esp_core = { workspace = true, features = ["std"] }
+rusty_esp_image-core = { workspace = true, features = ["std"] }
+rusty_jpeg = { version = "0.3", default-features = false, features = ["std"] }
+
+[[example]]
+name = "mjpeg_server"
+required-features = ["std"]
+
+[[test]]
+name = "mjpeg_http_oracle"
+required-features = ["std"]
 
 [lints]
 workspace = true

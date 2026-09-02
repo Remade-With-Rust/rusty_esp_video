@@ -119,7 +119,8 @@ mod tests {
         c.write(&[0; 5]).unwrap();
         assert_eq!((c.bytes, c.writes), (15, 2));
         let mut v = alloc::vec::Vec::new();
-        (&mut v).write(b"ab").unwrap();
+        let mut by_ref: &mut alloc::vec::Vec<u8> = &mut v;
+        by_ref.write(b"ab").unwrap();
         v.write(b"c").unwrap();
         assert_eq!(v, b"abc");
     }

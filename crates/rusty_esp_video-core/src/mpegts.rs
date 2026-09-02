@@ -536,7 +536,7 @@ mod tests {
         }
         let packets = mux.packets();
         assert_eq!(mux.psi_written(), 1, "PSI once: one keyframe, few packets");
-        drop(mux);
+        let _ = mux.into_sink();
         assert_eq!(ts.len() % PACKET_LEN, 0);
         assert_eq!(ts.len() / PACKET_LEN, packets as usize);
 
@@ -568,7 +568,7 @@ mod tests {
             &with_aud,
         ))
         .unwrap();
-        drop(mux);
+        let _ = mux.into_sink();
         let r = demux::parse(&ts2).unwrap();
         assert_eq!(r.access_units[0], with_aud);
 

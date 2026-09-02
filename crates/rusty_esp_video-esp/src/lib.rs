@@ -24,6 +24,8 @@ pub use rusty_esp_video_core as core;
 pub mod client;
 #[cfg(feature = "std")]
 pub mod net;
+#[cfg(feature = "std")]
+pub mod udp_net;
 
 /// Which track this build of the backend crate was compiled for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -130,6 +130,69 @@ And the encoder has no keyframe request: the wrapper recreates the encoder,
 whose first picture is an IDR, which costs a full state reset per request
 and is the right thing for a late joiner anyway.
 
+## V2 host half - RTP/JPEG and raw datagrams to a laptop (2026-09-02)
+
+V0 had the sending halves (`rtp::JpegPayloader`, `udp::Framer`, `Pacer`).
+V2 adds the receiving halves and the two ends over real sockets:
+
+- `rtp::JpegDepayloader`: RFC 2435 back to a JPEG in a caller buffer, the
+  scan written in place and the headers (SOI, DQT, SOF0, the four Annex K
+  DHTs, DRI, SOS) synthesised in front of it; a sequence gap or an offset
+  that is not the next byte drops the frame and the next frame start
+  resynchronises. `rtp::huffman` is the Annex K table set and
+  `JpegScan::parse` now refuses a JPEG whose DHT is not that set (RFC 2435
+  carries no Huffman tables, so an optimised-table encoder would produce a
+  stream no receiver can decode). `default_quant_tables` is RFC 2435
+  Appendix A for `Q < 128`, in the zigzag order ffmpeg uses.
+- `rusty_esp_video-esp::udp_net`: `RtpJpegSender` / `RawUdpSender` over
+  `std::net::UdpSocket` (what the chip runs under ESP-IDF), and
+  `receive_rtp_jpeg` / `receive_raw` with `RxStats` (packets, frames, lost,
+  dropped, bad, fps between first and last frame). Examples `rtp_send` and
+  `rtp_recv`.
+
+| Gate | Result |
+|---|---|
+| The Annex K tables the receiver writes equal the DHT segments `rusty_jpeg` (an independent transcription) emits; every table's code-length sum equals its symbol count | pass |
+| A 64x32 `rusty_jpeg` image through payloader (300-byte MTU) and depayloader: same scan bytes, same quantization tables, same DHT bytes, and the house decoder returns identical pixels; a missing fragment drops that frame and the next frame decodes | pass |
+| Headers built from a `Q` factor alone (no tables in-band) are a JPEG the house decoder reads; an optimised-Huffman JPEG is refused at the sender | pass |
+| **ffmpeg's RFC 2435 receiver** (`-protocol_whitelist file,rtp,udp -i janus.sdp`) reassembles what our payloader sends and decodes 10 frames of it (`framecrc`), no complaint on stderr | **pass** |
+| **Our depayloader rebuilds what ffmpeg's `rtpenc_jpeg` sends** (`testsrc` 320x240 10 fps, `-c:v mjpeg -huffman default -f rtp`): 20 frames, 0 lost / dropped / bad, every frame 320x240, the first one read by the house decoder and by `ffmpeg -f null` with empty stderr | **pass** |
+| Our two ends over loopback, three frames at a 700-byte MTU: same packet count both sides, 90 kHz timestamps 0 / 9000 / 18000, every frame decodes to the same pixels as the original | pass |
+| Raw datagram path over loopback (1200-byte MTU, four JPEGs): byte-identical, sequence / timestamp / key / codec tag preserved, 0 lost | pass |
+
+Unit tests: **33** in the core (9 in `rtp`), 1 in `-esp`; oracle tests 4 in
+`rtp_oracle` (the two ffmpeg ones serialised, they each bind RTP ports).
+Clippy `-D warnings` clean on all targets with and without `std`;
+`riscv32imac-unknown-none-elf` still compiles the core without `std`.
+
+### The ten-minute run on the Wi-Fi address
+
+`rtp_send` and `rtp_recv` as two processes on this machine, both bound to
+the Wi-Fi adapter's address (192.168.0.224, not loopback), colour bars at
+320x240, `rusty_jpeg` quality 80, 10 fps, 1200-byte MTU. The honest
+substitute for the board-to-laptop row until there is a board.
+
+| | RTP/JPEG, 600 s | raw datagrams, 60 s |
+|---|---|---|
+| sender: frames · packets · bytes | 6 000 · 30 000 · 33 468 000 | 600 · 3 600 · 3 683 009 |
+| receiver: packets · frames | 29 946 · **5 989** | 3 535 · **589** |
+| lost · dropped · bad | **0 · 0 · 0** | **0 · 0 · 0** |
+| receiver fps (first to last frame) | 10.00 | 10.00 |
+| frame bytes, smallest .. largest | 5 899 .. 5 993 | 5 921 .. 6 015 |
+| sender packets outside the receiver's window | 54 | 65 |
+
+The receiver's window closed a second before the sender's did (it was
+started first), so each run's last frames arrived after it stopped; the
+sequence counter saw no gap in either run. Three sampled frames of the RTP
+run probe `mjpeg,320,240`. The decode gate over every file: in a second
+60 s run writing frames the same way (590
+frames, 0 lost), the 590 files on disk concatenated
+into one MJPEG stream decode as **590 frames** in
+`ffmpeg -f mjpeg`, every file. ("written" is the count of `std::fs::write`
+calls that returned `Ok`; the ten-minute run's shortfall against frames
+received is this Windows host's filesystem refusing some of the ten
+creates a second, not the transport.)
+
 ## Not yet measured
 
 - Wi-Fi throughput and frames per second on a XIAO ESP32-S3 Sense (V1).

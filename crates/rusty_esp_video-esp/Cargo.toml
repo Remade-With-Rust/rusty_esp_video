@@ -40,8 +40,20 @@ required-features = ["std"]
 name = "mjpeg_record"
 required-features = ["std"]
 
+[[example]]
+name = "rtp_send"
+required-features = ["std"]
+
+[[example]]
+name = "rtp_recv"
+required-features = ["std"]
+
 [[test]]
 name = "mjpeg_http_oracle"
+required-features = ["std"]
+
+[[test]]
+name = "rtp_oracle"
 required-features = ["std"]
 
 [lints]

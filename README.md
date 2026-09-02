@@ -65,7 +65,9 @@ datagram framing (`rtp::JpegDepayloader`, `udp_net` in `-esp`), with ffmpeg
 as the oracle in both directions: ffmpeg reassembles and decodes what
 `rtp_send` sends, and `rtp_recv` rebuilds what ffmpeg's RTP packetiser
 sends. Ten minutes sender to receiver on the Wi-Fi adapter's address:
-5 989 frames, 0 lost, 0 dropped.
+5 989 frames, 0 lost, 0 dropped. The drop policy is `pacer::Budget`: a
+byte budget that drops a frame whole when it does not fit a bit-rate cap
+and counts it, on both senders (`--kbps` on `rtp_send`).
 
 ## What is in the core
 

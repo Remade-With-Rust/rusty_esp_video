@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use rusty_esp_video_core::esp_core::error::{Error, Result};
 use rusty_esp_video_core::esp_core::time::Micros;
+use rusty_esp_video_core::pacer::Budget;
 use rusty_esp_video_core::packet::MediaPacket;
 use rusty_esp_video_core::rtp::{Depayload, JpegDepayloader, JpegPayloader, HEADER_RESERVE};
 use rusty_esp_video_core::udp::{self, Framer, Reassembler, Reassembly};
@@ -25,6 +26,8 @@ pub struct TxStats {
     pub packets: u64,
     /// Bytes on the wire, headers included.
     pub bytes: u64,
+    /// Frames dropped whole by the byte budget.
+    pub dropped: u64,
 }
 
 /// RTP/JPEG sender: one `send_frame` per JPEG, MTU-sized packets to one
@@ -34,6 +37,7 @@ pub struct RtpJpegSender {
     socket: UdpSocket,
     payloader: JpegPayloader,
     scratch: Vec<u8>,
+    budget: Option<Budget>,
     /// Running totals.
     pub stats: TxStats,
 }
@@ -52,12 +56,46 @@ impl RtpJpegSender {
             socket,
             payloader: JpegPayloader::new(ssrc, (ssrc & 0xFFFF) as u16, mtu)?,
             scratch: vec![0u8; mtu],
+            budget: None,
             stats: TxStats::default(),
         })
     }
 
-    /// Send one JPEG captured at `timestamp`. Returns the packet count.
+    /// Cap the stream at `kbps` with `burst_ms` of headroom: a frame that
+    /// does not fit is dropped whole and counted (see
+    /// [`Budget`]). The budget counts wire bytes, headers included.
+    #[must_use]
+    pub fn with_budget(mut self, kbps: u32, burst_ms: u32) -> Self {
+        self.budget = Some(Budget::new(kbps, burst_ms));
+        self
+    }
+
+    /// The budget's own counters, when there is one.
+    #[must_use]
+    pub fn budget(&self) -> Option<&Budget> {
+        self.budget.as_ref()
+    }
+
+    /// Wire bytes `payload` will take at this MTU, headers included.
+    fn wire_len(&self, payload: usize) -> usize {
+        let room = self
+            .scratch
+            .len()
+            .saturating_sub(rusty_esp_video_core::rtp::HEADER_LEN + 8);
+        let packets = payload.div_ceil(room.max(1));
+        payload + packets * (rusty_esp_video_core::rtp::HEADER_LEN + 8) + 4 + 128
+    }
+
+    /// Send one JPEG captured at `timestamp`. Returns the packet count, 0
+    /// when the budget dropped the frame.
     pub fn send_frame(&mut self, jpeg: &[u8], timestamp: Micros) -> Result<usize> {
+        let wire = self.wire_len(jpeg.len());
+        if let Some(b) = self.budget.as_mut() {
+            if !b.admit(timestamp, wire) {
+                self.stats.dropped += 1;
+                return Ok(0);
+            }
+        }
         let socket = &self.socket;
         let stats = &mut self.stats;
         let n = self
@@ -85,6 +123,7 @@ pub struct RawUdpSender {
     socket: UdpSocket,
     framer: Framer,
     scratch: Vec<u8>,
+    budget: Option<Budget>,
     /// Running totals.
     pub stats: TxStats,
 }
@@ -98,12 +137,36 @@ impl RawUdpSender {
             socket,
             framer: Framer::new(mtu)?,
             scratch: vec![0u8; mtu],
+            budget: None,
             stats: TxStats::default(),
         })
     }
 
-    /// Send one packet. Returns the datagram count.
+    /// Cap the stream at `kbps` with `burst_ms` of headroom; see
+    /// [`RtpJpegSender::with_budget`].
+    #[must_use]
+    pub fn with_budget(mut self, kbps: u32, burst_ms: u32) -> Self {
+        self.budget = Some(Budget::new(kbps, burst_ms));
+        self
+    }
+
+    /// The budget's own counters, when there is one.
+    #[must_use]
+    pub fn budget(&self) -> Option<&Budget> {
+        self.budget.as_ref()
+    }
+
+    /// Send one packet. Returns the datagram count, 0 when the budget
+    /// dropped it.
     pub fn send_packet(&mut self, packet: &MediaPacket<'_>) -> Result<usize> {
+        let room = self.scratch.len().saturating_sub(udp::HEADER_LEN).max(1);
+        let wire = packet.len() + packet.len().div_ceil(room) * udp::HEADER_LEN;
+        if let Some(b) = self.budget.as_mut() {
+            if !b.admit(packet.timestamp, wire) {
+                self.stats.dropped += 1;
+                return Ok(0);
+            }
+        }
         let socket = &self.socket;
         let stats = &mut self.stats;
         let n = self.framer.frame(packet, &mut self.scratch, |d| {
@@ -278,6 +341,61 @@ pub fn receive_raw(
 mod tests {
     use super::*;
     use rusty_esp_video_core::packet::Codec;
+
+    #[test]
+    fn a_budgeted_sender_drops_whole_frames_and_the_receiver_sees_only_whole_ones() {
+        // 40 packets of 6 000 bytes every 100 ms of device time = 480 kbit/s
+        // against a 200 kbit/s cap with half a second of burst. The receiver
+        // runs concurrently: seventeen 6 kB packets sent back to back would
+        // overflow a loopback socket's buffer before a late receiver drained it.
+        let rx = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let dest = rx.local_addr().unwrap();
+        let payload: Vec<u8> = (0..6_000u32).map(|i| (i % 253) as u8).collect();
+        let expected = payload.clone();
+        let receiver = std::thread::spawn(move || {
+            let mut buf = vec![0u8; 16 * 1024];
+            let mut got = Vec::new();
+            let stats = receive_raw(
+                &rx,
+                &mut buf,
+                Until {
+                    frames: 0,
+                    for_at_most: Duration::from_millis(1500),
+                },
+                |h, bytes| {
+                    assert_eq!(bytes, &expected[..], "whole frames only");
+                    got.push(h.timestamp.0 / 100_000);
+                },
+            )
+            .unwrap();
+            (stats, got)
+        });
+        let mut tx = RawUdpSender::bind("127.0.0.1:0", dest, 1200)
+            .unwrap()
+            .with_budget(200, 500);
+        let mut sent = Vec::new();
+        for n in 0..40u64 {
+            let p = MediaPacket::new(Codec::Jpeg, true, Micros(n * 100_000), &payload);
+            if tx.send_packet(&p).unwrap() > 0 {
+                sent.push(n);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(tx.stats.frames + tx.stats.dropped, 40);
+        assert_eq!(tx.stats.frames as usize, sent.len());
+        assert!(tx.stats.dropped >= 20, "{:?}", tx.stats);
+        let b = tx.budget().unwrap();
+        // four seconds of device time at 25 000 B/s plus the burst bound the bytes admitted
+        assert!(
+            b.bytes_admitted <= 25_000 * 4 + 12_500,
+            "{}",
+            b.bytes_admitted
+        );
+        let (stats, got) = receiver.join().unwrap();
+        assert_eq!(stats.frames as usize, sent.len());
+        assert_eq!((stats.lost, stats.bad), (0, 0));
+        assert_eq!(got, sent, "exactly the admitted frames, in order");
+    }
 
     #[test]
     fn raw_sender_and_receiver_agree_over_loopback() {

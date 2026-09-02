@@ -165,6 +165,18 @@ Unit tests: **33** in the core (9 in `rtp`), 1 in `-esp`; oracle tests 4 in
 Clippy `-D warnings` clean on all targets with and without `std`;
 `riscv32imac-unknown-none-elf` still compiles the core without `std`.
 
+### The drop policy under a bit-rate cap
+
+`pacer::Budget`: a token bucket in wire bytes refilled at `kbps`, holding
+`burst_ms` of headroom; a frame that does not fit is dropped whole and
+counted, never queued. Both senders take one (`with_budget`), counting
+wire bytes with headers.
+
+| Gate | Result |
+|---|---|
+| 100 frames of 6 000 B every 100 ms (480 kbit/s) against 200 kbit/s with 500 ms burst: 38 to 44 admitted, bytes admitted ≤ 10 s × 25 000 B/s + the burst; a frame larger than the burst never sends; `kbps = 0` admits everything; `reset` refills | pass |
+| The raw sender over loopback with the same cap, a concurrent receiver: 40 packets in, at least 20 dropped whole, the receiver sees exactly the admitted sequence numbers in order with every payload intact, 0 lost, 0 bad | pass |
+
 ### The ten-minute run on the Wi-Fi address
 
 `rtp_send` and `rtp_recv` as two processes on this machine, both bound to

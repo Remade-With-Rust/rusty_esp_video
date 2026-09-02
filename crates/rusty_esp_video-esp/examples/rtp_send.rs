@@ -8,7 +8,9 @@
 //!
 //! Arguments: destination, frames per second (default 10), seconds to run
 //! (default 0 = forever), `--raw` for the Janus datagram framing instead of
-//! RTP. Everything below the JPEG encoder is what the chip runs.
+//! RTP, `--kbps N` to cap the stream (frames that do not fit are dropped
+//! whole and counted). Everything below the JPEG encoder is what the chip
+//! runs.
 
 use std::time::{Duration, Instant};
 
@@ -27,9 +29,16 @@ fn main() -> Result<()> {
     let mut fps: u32 = 10;
     let mut secs: u64 = 0;
     let mut raw = false;
+    let mut kbps: u32 = 0;
+    let mut want_kbps = false;
     let mut positional = 0;
     for a in args {
-        if a == "--raw" {
+        if want_kbps {
+            kbps = a.parse().unwrap_or(0);
+            want_kbps = false;
+        } else if a == "--kbps" {
+            want_kbps = true;
+        } else if a == "--raw" {
             raw = true;
         } else if positional == 0 {
             fps = a.parse().unwrap_or(10);
@@ -45,10 +54,24 @@ fn main() -> Result<()> {
     let mut jpeg = Vec::new();
     let mut rtp = (!raw)
         .then(|| RtpJpegSender::bind("0.0.0.0:0", &dest, 0x4A41_4E55, MTU))
-        .transpose()?;
+        .transpose()?
+        .map(|s| {
+            if kbps > 0 {
+                s.with_budget(kbps, 500)
+            } else {
+                s
+            }
+        });
     let mut rawtx = raw
         .then(|| RawUdpSender::bind("0.0.0.0:0", &dest, MTU))
-        .transpose()?;
+        .transpose()?
+        .map(|s| {
+            if kbps > 0 {
+                s.with_budget(kbps, 500)
+            } else {
+                s
+            }
+        });
     eprintln!(
         "sending {} to {dest} at {fps} fps{}",
         if raw { "raw datagrams" } else { "RTP/JPEG" },
@@ -110,12 +133,19 @@ fn main() -> Result<()> {
         .or(rawtx.as_ref().map(|t| t.stats))
         .unwrap_or_default();
     println!(
-        "send {}s: frames={} packets={} bytes={} ({:.2} fps)",
+        "send {}s: frames={} dropped={} packets={} bytes={} ({:.2} fps, {:.1} kbit/s{})",
         started.elapsed().as_secs(),
         s.frames,
+        s.dropped,
         s.packets,
         s.bytes,
-        s.frames as f64 / started.elapsed().as_secs_f64()
+        s.frames as f64 / started.elapsed().as_secs_f64(),
+        s.bytes as f64 * 8.0 / 1000.0 / started.elapsed().as_secs_f64(),
+        if kbps > 0 {
+            format!(", cap {kbps}")
+        } else {
+            String::new()
+        }
     );
     Ok(())
 }

@@ -15,6 +15,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
 
 [[package]]
+name = "libm"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+
+[[package]]
+name = "once_cell"
+version = "1.21.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "portable-atomic"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
+
+[[package]]
 name = "rusty_esp_core"
 version = "0.1.0"
 
@@ -57,8 +75,6 @@ dependencies = [
 [[package]]
 name = "rusty_h264"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2801bf7093f351a1390d5f1891b4dff83b6bd0c3baa9d3d64c7022b6e66200c0"
 dependencies = [
  "rusty_h264-common",
  "rusty_h264-decoder",
@@ -68,18 +84,17 @@ dependencies = [
 [[package]]
 name = "rusty_h264-common"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f932361ba332605c2f77d55fa3bcdce64c9b593a51c172c0002f8dcddb15a37"
 dependencies = [
  "bytemuck",
+ "libm",
+ "once_cell",
+ "portable-atomic",
  "wide",
 ]
 
 [[package]]
 name = "rusty_h264-decoder"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43bf69918c6144d1e18a0e1c791ae23148311e4d3e681a4f067ee62c04cfe380"
 dependencies = [
  "rusty_h264-common",
 ]
@@ -87,8 +102,6 @@ dependencies = [
 [[package]]
 name = "rusty_h264-encoder"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7965fc9c3b19ddd14883db7ab30f979ed1bf5588b75c115281c4f6f9a01a608"
 dependencies = [
  "rusty_h264-common",
 ]
@@ -117,7 +130,3 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
-
-[[patch.unused]]
-name = "rusty_esp_image-esp"
-version = "0.1.0"

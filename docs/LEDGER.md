@@ -97,11 +97,30 @@ than this laptop core, so the honest expectation is single-digit FPS at QVGA
 in software, which is why the P4's hardware encoder sits behind the same
 trait.
 
-`rusty_h264` today is a **host crate** (`std::thread::scope` GOP parallelism,
-`std::env` switches, `Instant` profiling, `Vec` everywhere), so the `h264`
-feature implies `std` and runs on the host and Track A. The upstream
-`no_std` pass (`rusty_h264` branch `no-std`, in progress) moves the same
-wrapper down the ladder unchanged.
+### The `no_std` pass, same day
+
+`rusty_h264` 0.12 on crates.io is a host crate (`std::thread::scope` GOP
+parallelism, ~100 `std::env` knobs, `Instant` profiling, file sinks). The
+upstream pass is done on branch `no-std`
+([PR #7](https://github.com/Remade-With-Rust/rusty_h264/pull/7), 3 commits,
++5 314 / -1 504): `rusty_h264-common`, `rusty_h264-encoder` and the facade
+are `no_std` + `alloc` with a `libm` feature for the float math; the decoder
+stays `std`-only behind the facade's `std` feature. Every upstream gate ran
+green here: the full common + encoder suites with `std` and on the `no_std`
+code paths (`--features libm`), the workspace with default features, the
+scalar arm, and `cargo check` on `riscv32imac-unknown-none-elf`.
+
+With that branch the `h264` feature here is **`alloc` + `rusty_h264/libm`**
+(no `std`), and the wrapper is unchanged:
+
+| gate | result |
+|---|---|
+| `cargo check -p rusty_esp_video-core --no-default-features --features alloc,h264 --target riscv32imac-unknown-none-elf` (ESP32-C6 class) | **clean** |
+| same on `riscv32imafc-unknown-none-elf` (ESP32-P4 class) | **clean** |
+| the QVGA oracle on the host with the branch (host `std` + `libm` math) | same 30 access units, IDR on the GOP, `ffprobe` `h264,Constrained Baseline,320,240,30`, **13 239 bytes** — byte-identical to the platform-libm build on this host; 452 / 534 µs per frame |
+
+So the encoder is one `cargo build` away from a chip on the software
+side; the S3 number is a row in `docs/plans/hardware-verify.md`.
 
 Two facts worth a line. `rusty_h264` selects Baseline+CAVLC through an
 environment variable (`RUSTY_H264_LEGACY_CAVLC`) by default; a chip has no

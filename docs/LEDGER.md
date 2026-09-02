@@ -37,6 +37,9 @@ code ESP-IDF runs) fed by colour bars encoded to JPEG:
 | A Rust client reads the response head (`multipart/x-mixed-replace; boundary=janus-frame`) and five parts; every part is exactly one JPEG (`find_eoi` = `Content-Length`) whose header probes to 160×120 | pass |
 | `GET /` returns the viewer page (`text/html`, `<img src="/stream">`); `GET /nope` returns 404; the server's counters agree (3 connections, 1 stream, ≥5 frames) | pass |
 | `EncodedSource`: a 50 fps source capped at 10 fps admits every fifth frame, counts drops, and the JPEG passthrough packet borrows the frame half of scratch | pass |
+| **The record path (pi-mission H3, without `rff`):** `mjpeg_reader::Reader` round-trips the writer's output in one push and under 1-, 3-, 7-, 64- and 1000-byte chunking, with and without the response head; `client::pull_stream` pulls 6 frames over TCP into a file; **`ffprobe -f mjpeg -count_frames` reads that file as `mjpeg,…,6`** | **pass** |
+
+Unit tests after the record path: **23** in `rusty_esp_video-core`; oracle tests **6** (3 TS, 3 HTTP).
 
 ## Sizes
 

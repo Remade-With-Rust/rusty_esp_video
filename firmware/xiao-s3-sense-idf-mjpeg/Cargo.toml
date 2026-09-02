@@ -56,7 +56,7 @@ embuild = "0.33"
 [package.metadata.esp-idf-sys]
 # ESP-IDF v5.5 line, the one n0's iroh-on-ESP32 examples and esp-idf-svc 0.52 target.
 esp_idf_version = "v5.5.1"
-esp_idf_tools_install_dir = "workspace"
+esp_idf_tools_install_dir = "global"
 
 # Espressif's camera driver, bound once. `bindings_module = "camera"` is the
 # name rusty_esp_image-esp expects.

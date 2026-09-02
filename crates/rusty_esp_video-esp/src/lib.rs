@@ -21,6 +21,8 @@ compile_error!("enable exactly one track: `esp-hal` (no_std) or `esp-idf` (std)"
 pub use rusty_esp_video_core as core;
 
 #[cfg(feature = "std")]
+pub mod client;
+#[cfg(feature = "std")]
 pub mod net;
 
 /// Which track this build of the backend crate was compiled for.

@@ -21,7 +21,12 @@ adds is the camera and Wi-Fi on the board.
 
 ## Build, flash, watch
 
+On Windows the ESP-IDF build needs a very short target directory (esp-idf-sys
+refuses long output paths), so set `CARGO_TARGET_DIR` to something like
+`C:\janus-t`. The IDF tools install globally under `~/.espressif`.
+
 ```sh
+export CARGO_TARGET_DIR=C:/janus-t                 # Windows only
 JANUS_WIFI_SSID=yournet JANUS_WIFI_PASS=yourpass cargo build --release
 JANUS_WIFI_SSID=yournet JANUS_WIFI_PASS=yourpass cargo run --release   # espflash flash --monitor
 ```

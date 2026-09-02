@@ -15,6 +15,7 @@ use rusty_esp_image_core::jpeg;
 use rusty_esp_image_core::source::{ImageSource, TestPattern};
 use rusty_esp_video_core::encoder::{EncoderConfig, Passthrough, VideoEncoder};
 use rusty_esp_video_core::source::EncodedSource;
+use rusty_esp_video_esp::client::pull_stream;
 use rusty_esp_video_esp::net::{MjpegHttpServer, ServeStats, Served};
 
 const W: u32 = 160;
@@ -236,4 +237,61 @@ fn ffmpeg_reads_the_stream_as_mjpeg_and_counts_frames() {
         "ffmpeg read 8 MJPEG frames; server pushed {} before the client hung up",
         stats.frames
     );
+}
+
+#[test]
+fn recorder_pulls_frames_and_ffprobe_counts_the_file() {
+    let (addr, rx) = spawn_server(1);
+    let dir = std::env::temp_dir().join("rusty_esp_video_record_oracle");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("pulled.mjpeg");
+    let mut file = std::fs::File::create(&path).unwrap();
+    let mut buf = vec![0u8; 256 * 1024];
+    let stats = pull_stream(&addr, "/stream", 6, &mut buf, |jpeg, ts| {
+        assert!(ts.is_some(), "the writer stamps every part");
+        let info = jpeg::probe(jpeg).unwrap();
+        assert_eq!((info.geometry.width, info.geometry.height), (W, H));
+        file.write_all(jpeg).map_err(|_| Error::Hardware)
+    })
+    .unwrap();
+    drop(file);
+    assert_eq!(stats.frames, 6);
+    assert!(stats.bytes > 6 * 100);
+    let (server_stats, _) = rx.recv().unwrap();
+    assert!(server_stats.frames >= 6);
+
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "mjpeg",
+            "-count_frames",
+            "-show_entries",
+            "stream=codec_name,nb_read_frames",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&path)
+        .output();
+    match probe {
+        Ok(out) => {
+            assert!(
+                out.status.success(),
+                "ffprobe: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let text = String::from_utf8_lossy(&out.stdout);
+            let line = text.lines().next().unwrap_or("").trim();
+            assert!(line.starts_with("mjpeg,"), "{text}");
+            assert!(line.ends_with(",6"), "ffprobe counted: {text}");
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if std::env::var_os("JANUS_REQUIRE_FFPROBE").is_some() {
+                panic!("ffprobe is required and not on PATH");
+            }
+            eprintln!("ffprobe not on PATH; external oracle skipped");
+        }
+        Err(e) => panic!("ffprobe failed to start: {e}"),
+    }
 }

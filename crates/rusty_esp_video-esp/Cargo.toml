@@ -36,6 +36,10 @@ rusty_jpeg = { version = "0.3", default-features = false, features = ["std"] }
 name = "mjpeg_server"
 required-features = ["std"]
 
+[[example]]
+name = "mjpeg_record"
+required-features = ["std"]
+
 [[test]]
 name = "mjpeg_http_oracle"
 required-features = ["std"]

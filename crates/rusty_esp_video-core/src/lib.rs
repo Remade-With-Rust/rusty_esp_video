@@ -16,6 +16,7 @@
 //! | [`sink`] | [`PacketSink`] and the host/test sinks |
 //! | [`source`] | [`PacketSource`] and [`EncodedSource`] — an `ImageSource` joined to a `VideoEncoder`, paced |
 //! | [`mjpeg_http`] | `multipart/x-mixed-replace` — what a browser opens |
+//! | [`mjpeg_reader`] | the receiving side: a streaming multipart parser over a caller buffer |
 //! | [`rtp`] | RTP headers, RFC 6184 H.264 (single NAL + FU-A) and RFC 2435 JPEG payloaders |
 //! | [`mpegts`] | an MPEG-2 transport stream mux (PAT, PMT, PES, PCR) for H.264 — what `rff -i udp://` reads today |
 //! | [`udp`] | a tiny framing for raw datagrams with a matching reassembler |
@@ -32,6 +33,7 @@ extern crate alloc;
 pub mod annexb;
 pub mod encoder;
 pub mod mjpeg_http;
+pub mod mjpeg_reader;
 pub mod mpegts;
 pub mod pacer;
 pub mod packet;

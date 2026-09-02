@@ -41,8 +41,12 @@ cargo run -p rusty_esp_video-esp --features std --example mjpeg_server -- 127.0.
 # open http://127.0.0.1:8080/  or:  ffmpeg -i http://127.0.0.1:8080/stream -frames:v 30 -f null -
 ```
 
-Not yet: the board (flash, the 320×240 frame count on serial, the Pi record
-path), the P4 hardware encoder, and `rusty_h264` on the chip (V3).
+The Pi record path exists too: `mjpeg_record` pulls a stream to disk and
+`ffprobe -f mjpeg` counts its frames (in the ledger), so a Raspberry Pi needs
+no `rff` to record a device.
+
+Not yet: the board (flash, the 320×240 frame count on serial), the P4
+hardware encoder, and `rusty_h264` on the chip (V3).
 
 ## What is in the core
 
@@ -59,8 +63,12 @@ path), the P4 hardware encoder, and `rusty_h264` on the chip (V3).
 | `pacer` | `Pacer`: a frame-rate cap with drop counters |
 | `source` | `PacketSource`; `EncodedSource` — an `ImageSource` joined to a `VideoEncoder`, paced, zero-copy for JPEG |
 
+| `mjpeg_reader` | `Reader`: the receiving side of the multipart stream over a caller buffer — the Pi hub, the recorder and the bridge use it |
+
 `rusty_esp_video-esp` (feature `std`): `net::{MjpegHttpServer, TcpSink}` — the
-Track A stream server, one viewer at a time; `examples/mjpeg_server.rs`.
+Track A stream server, one viewer at a time — and `client::pull_stream`, the
+receiver. Examples: `mjpeg_server` (serve colour bars) and `mjpeg_record`
+(record a device's stream to a `.mjpeg` file ffprobe reads).
 
 ```rust
 use rusty_esp_video::prelude::*;

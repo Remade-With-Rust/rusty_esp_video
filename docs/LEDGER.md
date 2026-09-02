@@ -41,6 +41,29 @@ code ESP-IDF runs) fed by colour bars encoded to JPEG:
 
 Unit tests after the record path: **23** in `rusty_esp_video-core`; oracle tests **6** (3 TS, 3 HTTP).
 
+## First Track A firmware build (2026-09-01)
+
+`firmware/xiao-s3-sense-idf-mjpeg` (`IdfCamera` → `EncodedSource` →
+`MjpegHttpServer` on `:80`, Wi-Fi via esp-idf-svc 0.52) builds for
+`xtensa-esp32s3-espidf` with ESP-IDF **v5.5.1** and esp32-camera **2.1.7**,
+`cargo build --release` on this Windows box (esp toolchain from `espup`):
+
+| quantity | value |
+|---|---:|
+| app image (`espflash save-image --chip esp32s3`) | **1,073,152 B** |
+| factory partition, `partitions_singleapp_large.csv` (8 MB flash) | 1,536,000 B → **69.9 %** used |
+| `.flash.text` / `.flash.rodata` | 795,488 B / 155,504 B |
+| `.iram0.text` | 89,375 B |
+| static DRAM (`.dram0.data` + `.dram0.bss`) | 31,356 B + 19,288 B |
+| rebuild after the IDF is configured (Rust crates + link) | 1 m 50 s |
+
+Fit: yes, with ~460 KB of factory partition to spare before OTA is a
+question. Not measured: RAM at run time, frames per second, the browser
+kill test — all need the board. The build also fixed three
+write-then-discover mistakes recorded in the mission plan §8 (project
+discovery with a short target dir, the `esp_core` re-export path, `ESP_OK`
+being `u32` in the bindings).
+
 ## Sizes
 
 | Date | Quantity | Value | Method |

@@ -23,7 +23,10 @@ adds is the camera and Wi-Fi on the board.
 
 On Windows the ESP-IDF build needs a very short target directory (esp-idf-sys
 refuses long output paths), so set `CARGO_TARGET_DIR` to something like
-`C:\janus-t`. The IDF tools install globally under `~/.espressif`.
+`C:\janus-t`. The IDF tools install globally under `~/.espressif`. Because
+the target dir then sits outside the project, `.cargo/config.toml` pins
+`CARGO_WORKSPACE_DIR` so esp-idf-sys still reads this manifest (without it the
+camera component is silently never fetched).
 
 ```sh
 export CARGO_TARGET_DIR=C:/janus-t                 # Windows only
@@ -46,6 +49,14 @@ ffmpeg -i http://<ip>/stream -frames:v 150 -f null -      # 10 s at 15 fps
 
 Record the numbers in `rusty_esp_video/docs/LEDGER.md` and
 `rusty_esp_image/docs/LEDGER.md`.
+
+## Build status
+
+Builds on 2026-09-01 against ESP-IDF v5.5.1 and esp32-camera 2.1.7 (pinned in
+`components_esp32s3.lock`, which is committed on purpose): a 1,073,152-byte
+app image, 70 % of the 1.5 MiB factory partition that
+`partitions_singleapp_large.csv` gives an 8 MB part. Numbers and sections in
+`rusty_esp_video/docs/LEDGER.md`. Not flashed yet.
 
 ## Notes
 

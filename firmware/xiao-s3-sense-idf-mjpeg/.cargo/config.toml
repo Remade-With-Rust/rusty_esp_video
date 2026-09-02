@@ -10,6 +10,11 @@ rustflags = ["--cfg", "espidf_time64"]
 build-std = ["std", "panic_abort"]
 
 [env]
+# embuild finds the project by walking up from the target dir; with
+# CARGO_TARGET_DIR pointing outside the project (a must on Windows, see the
+# README) that lands on the wrong directory and every
+# [package.metadata.esp-idf-sys] setting above is silently ignored. Pin it.
+CARGO_WORKSPACE_DIR = { value = "", relative = true }
 MCU = "esp32s3"
 ESP_IDF_VERSION = "v5.5.1"
 # Keeps `cc` from injecting host defaults into the cross build.

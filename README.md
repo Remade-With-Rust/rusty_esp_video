@@ -21,12 +21,12 @@ run that produced it. Nothing here has run on a chip yet.
 
 ## Status
 
-**V0 implemented on the host (2026-09-01); gate partly run.** A 12-frame
-H.264 stream from the house encoder, muxed by this crate into MPEG-TS, is read
-by `ffprobe` as `h264,64,48,12` — every access unit, and round-trips
-byte-identical through the crate's own demuxer into the house decoder. 18
-unit tests pass. Clippy and the riscv32 bare-metal checks for V0 have **not**
-run yet: the development machine's disk filled during the run. See the ledger.
+**V0 shipped on the host (2026-09-01).** A 12-frame H.264 stream from the
+house encoder, muxed by this crate into MPEG-TS, is read by `ffprobe` as
+`h264,64,48,12` and decoded by `ffmpeg` without a single error, and it
+round-trips byte-identical through the crate's own demuxer into the house
+decoder. 18 unit tests and 3 oracle tests pass; clippy is clean; the core
+compiles for riscv32 bare metal with and without `alloc`. See the ledger.
 
 Not yet: the ESP backends (sockets, the MJPEG HTTP responder, the P4 hardware
 encoder) — V1 onward, needing a board — and `rusty_h264` on the chip (V3).

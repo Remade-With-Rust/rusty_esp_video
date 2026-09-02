@@ -38,7 +38,6 @@ fn find_start_code(bytes: &[u8]) -> Option<(usize, usize)> {
 }
 
 /// Iterate the NAL units of an Annex-B byte stream, start codes stripped.
-#[must_use]
 pub fn nal_units(stream: &[u8]) -> impl Iterator<Item = &[u8]> {
     nal_spans(stream).map(move |s| &stream[s.nal_start..s.nal_end])
 }

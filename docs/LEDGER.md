@@ -18,19 +18,17 @@ Every number this package quotes lives here with the run that produced it.
 | CRC-32/MPEG-2 check value for `123456789` = `0x0376E6E7`; PES PTS encoding decodes back | pass |
 | Zero-copy `Passthrough`: the packet points at the frame's own bytes | pass |
 
-Unit tests: **18 pass**. Oracle tests: the two pure-Rust ones pass; the
-ffprobe test reached and printed its verdict (`h264,64,48,12`) and then hit a
-parsing bug in the test itself, since fixed. **Not yet re-run, and clippy
-and the riscv32 checks not yet run for V0: the development machine's disk
-filled to zero during the run** (a 291 GB build directory of another project
-plus a process writing continuously). They run next session; the code is
-unchanged by them.
+Unit tests: **18 pass**. Oracle tests: **3 pass** — the two pure-Rust ones
+and the external one, in which `ffprobe` reports `h264,64,48,12` and
+`ffmpeg -v error -i fixture.ts -f null -` exits 0 with an empty error log.
+Clippy `-D warnings` on all targets is clean; `riscv32imac-unknown-none-elf`
+compiles with `--no-default-features` and with `--features alloc`.
 
 ## Sizes
 
 | Date | Quantity | Value | Method |
 |---|---|---|---|
-| 2026-09-01 | 12 access units of 64×48 H.264 muxed to TS | 188-byte packets, one PAT+PMT pair at start (first key frame), PCR on every access unit | `tests/ts_oracle.rs`; exact packet count is printed by the ffprobe test and lands here after the re-run |
+| 2026-09-01 | 12 access units of 64×48 H.264 (house encoder, scalar) muxed to TS | **14 transport packets, 2 632 bytes**: one PAT + one PMT (the first key frame), 12 PES packets each fitting one 188-byte packet with PCR and stuffing | `tests/ts_oracle.rs`, `--nocapture` |
 
 ## Not yet measured
 

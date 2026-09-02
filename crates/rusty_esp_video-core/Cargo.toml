@@ -1,6 +1,6 @@
 [package]
 name = "rusty_esp_video-core"
-description = "The pure no_std + alloc core of rusty_esp_video: types, traits and algorithms with no drivers, no allocator and no product types. forbid(unsafe)."
+description = "esp_video, esp_h264 and the CameraWebServer stream remade in Rust, the pure core: the VideoEncoder seam with a zero-copy JPEG passthrough, MJPEG-over-HTTP, RTP payloaders (RFC 6184 H.264, RFC 2435 JPEG), an MPEG-TS mux that ffmpeg and rff read, raw UDP framing and a pacer. no_std, forbid(unsafe), no drivers."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,18 +10,26 @@ authors.workspace = true
 rust-version.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/rusty_esp_video-core"
-keywords = ["esp32", "embedded", "no-std", "mata", "remade-with-rust"]
-categories = ["embedded", "no-std", "hardware-support"]
+keywords = ["esp32", "embedded", "no-std", "video", "mpeg-ts"]
+categories = ["embedded", "no-std", "multimedia::video", "multimedia::encoding"]
 
 [features]
 default = ["std"]
 # The feature ladder is the rusty_zstd one: `std` implies `alloc`; with neither,
-# the crate is pure `core` and still builds on riscv32 bare metal.
+# the crate is pure `core` and still builds on riscv32 bare metal. `alloc`
+# adds the `Vec<u8>` sink and the test/host-side TS demuxer.
 std = ["alloc", "rusty_esp_core/std"]
 alloc = ["rusty_esp_core/alloc"]
 
 [dependencies]
 rusty_esp_core = { workspace = true }
+
+[dev-dependencies]
+# Oracles. rusty_h264 with default features OFF: no allocator hijack, the
+# portable scalar codec — the house encoder makes the fixture, the house
+# decoder proves the round trip.
+rusty_h264 = { version = "0.12", default-features = false }
+rusty_jpeg = { version = "0.3", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

@@ -32,19 +32,25 @@ extern crate alloc;
 
 pub mod annexb;
 pub mod encoder;
+#[cfg(feature = "h264")]
+pub mod h264;
 pub mod mjpeg_http;
 pub mod mjpeg_reader;
 pub mod mpegts;
 pub mod pacer;
 pub mod packet;
+pub mod policy;
 pub mod rtp;
 pub mod sink;
 pub mod source;
 pub mod udp;
 
 pub use encoder::{EncoderConfig, Passthrough, VideoEncoder};
+#[cfg(feature = "h264")]
+pub use h264::H264;
 pub use pacer::Pacer;
 pub use packet::{Codec, MediaPacket};
+pub use policy::{Choice, H264Path, Job, codec_for};
 pub use rusty_esp_core as esp_core;
 pub use sink::PacketSink;
 pub use source::{EncodedSource, PacketSource};

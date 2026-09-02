@@ -20,11 +20,17 @@ default = ["std"]
 # adds the `Vec<u8>` sink and the test/host-side TS demuxer.
 std = ["alloc", "rusty_esp_core/std", "rusty_esp_image-core/std"]
 alloc = ["rusty_esp_core/alloc", "rusty_esp_image-core/alloc"]
+# The J5 encoder: `rusty_h264` Constrained Baseline behind `VideoEncoder`.
+# Implies `std` today because rusty_h264 0.12 is a host crate; the upstream
+# `no_std` pass drops this to `alloc` without touching the wrapper.
+h264 = ["std", "dep:rusty_h264"]
 
 [dependencies]
 rusty_esp_core = { workspace = true }
 # The one planned Layer-1 edge: a VideoSource is an ImageSource plus an encoder.
 rusty_esp_image-core = { workspace = true }
+# Default features OFF: no allocator hijack, no SIMD, the portable scalar codec.
+rusty_h264 = { version = "0.12", default-features = false, optional = true }
 
 [dev-dependencies]
 # Oracles. rusty_h264 with default features OFF: no allocator hijack, the

@@ -70,7 +70,49 @@ being `u32` in the bindings).
 |---|---|---|---|
 | 2026-09-01 | 12 access units of 64×48 H.264 (house encoder, scalar) muxed to TS | **14 transport packets, 2 632 bytes**: one PAT + one PMT (the first key frame), 12 PES packets each fitting one 188-byte packet with PCR and stuffing | `tests/ts_oracle.rs`, `--nocapture` |
 
+## V3 (J5) host half - the H.264 encoder behind the seam (2026-09-02)
+
+`encoder::H264` (feature `h264`) wraps `rusty_h264` 0.12 (default features
+off: scalar, `forbid(unsafe)`, no allocator hijack) behind `VideoEncoder`
+with the chip configuration: **Constrained Baseline, CAVLC**, no 8x8
+transform, no B-frames, one reference, `Preset::Fast`, **no lookahead, no
+scene cut**, fixed GOP. `tests/h264_oracle.rs`, QVGA 320x240, 30 frames of a
+moving square on a gradient, GOP 15, quality 80 (QP 21), Windows 11, Rust
+1.98.0, `--release`, single thread:
+
+| gate | result |
+|---|---|
+| one access unit per `encode` call (no buffering), `flush` returns 0 bytes | pass |
+| IDR exactly on the GOP (frames 0 and 15), key flag == `contains_idr` of the bytes | pass |
+| `request_keyframe` -> IDR on the next frame | pass (`[T F F T F F]`) |
+| wrong pixel format / odd width / small output buffer refused | pass |
+| TS mux -> `demux::parse`: 30 access units, stream type 0x1B, 0 CC errors; the house decoder decodes them | pass |
+| **ffprobe** `codec_name,profile,width,height,nb_read_frames` | **`h264,Constrained Baseline,320,240,30`**; `ffmpeg -f null` exits 0 with an empty error log |
+| bytes | 13 239 B for 30 frames, 441 B/frame (about 53 kbit/s at 15 fps for this synthetic content) |
+| **host encode time per frame** (Instant around `encode`, min / median / max over 30) | **439 / 475 / 1 814 us** - a *host* number; the S3 row is in `hardware-verify.md` |
+
+The host baseline says what the S3 must be compared against, not what it
+will do: an ESP32-S3 at 240 MHz with no SIMD is one to two orders slower
+than this laptop core, so the honest expectation is single-digit FPS at QVGA
+in software, which is why the P4's hardware encoder sits behind the same
+trait.
+
+`rusty_h264` today is a **host crate** (`std::thread::scope` GOP parallelism,
+`std::env` switches, `Instant` profiling, `Vec` everywhere), so the `h264`
+feature implies `std` and runs on the host and Track A. The upstream
+`no_std` pass (`rusty_h264` branch `no-std`, in progress) moves the same
+wrapper down the ladder unchanged.
+
+Two facts worth a line. `rusty_h264` selects Baseline+CAVLC through an
+environment variable (`RUSTY_H264_LEGACY_CAVLC`) by default; a chip has no
+environment, so the wrapper sets `profile`, `cabac` and `transform_8x8`
+explicitly - they are public fields, the env var only chooses the default.
+And the encoder has no keyframe request: the wrapper recreates the encoder,
+whose first picture is an IDR, which costs a full state reset per request
+and is the right thing for a late joiner anyway.
+
 ## Not yet measured
 
 - Wi-Fi throughput and frames per second on a XIAO ESP32-S3 Sense (V1).
+- **J5 on the chip:** `H264` on the S3 - FPS at QVGA, cycle budget, PSRAM use; the P4 hardware encoder column. The host baseline above is the comparison, not the claim (`docs/plans/hardware-verify.md`).
 - `rff -i udp://` playback of the same stream: `rff` is not built on this machine yet; ffmpeg stands in as the external oracle until it is.

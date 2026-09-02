@@ -48,6 +48,18 @@ no `rff` to record a device.
 Not yet: the board (flash, the 320×240 frame count on serial), the P4
 hardware encoder, and `rusty_h264` on the chip (V3).
 
+**J5 host half (2026-09-02):** `encoder::H264` puts the house H.264 encoder
+behind the `VideoEncoder` seam in its chip configuration (Constrained
+Baseline, CAVLC, no lookahead, fixed GOP); a QVGA stream muxes to TS and
+`ffprobe` reads `h264,Constrained Baseline,320,240,30`. `policy::codec_for`
+says which codec each job gets on each chip. Host encode time 439-475 us a
+frame is the baseline the S3 number will be measured against, not a claim
+about the chip. The upstream `no_std` pass is done
+([rusty_h264 PR #7](https://github.com/Remade-With-Rust/rusty_h264/pull/7)),
+so `h264` is `alloc` + `libm` and the crate **checks with the encoder on
+`riscv32imac` and `riscv32imafc`**: the encoder is a `cargo build` from a
+chip on the software side.
+
 ## What is in the core
 
 | Module | What |

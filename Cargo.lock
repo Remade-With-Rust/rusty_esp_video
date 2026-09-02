@@ -119,9 +119,5 @@ dependencies = [
 ]
 
 [[patch.unused]]
-name = "rusty_esp_mid-core"
-version = "0.1.0"
-
-[[patch.unused]]
 name = "rusty_esp_image-esp"
 version = "0.1.0"

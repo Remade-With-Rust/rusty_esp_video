@@ -19,6 +19,8 @@ default = []
 # HTTP responder, a TCP sink. It is the same code on the host and on ESP-IDF.
 std = ["rusty_esp_video-core/std"]
 alloc = ["rusty_esp_video-core/alloc"]
+# The house H.264 encoder for the examples and the firmware that want it.
+h264 = ["rusty_esp_video-core/h264"]
 # Track A — std on ESP-IDF: IDF-only pieces (Wi-Fi bring-up helpers land here).
 esp-idf = ["std"]
 # Track B — bare metal: embassy-net sockets land here with their esp-hal pin.
@@ -30,7 +32,7 @@ rusty_esp_video-core = { workspace = true }
 [dev-dependencies]
 rusty_esp_core = { workspace = true, features = ["std"] }
 rusty_esp_image-core = { workspace = true, features = ["std"] }
-rusty_jpeg = { version = "0.3", default-features = false, features = ["std"] }
+rusty_jpeg = { version = "0.4", default-features = false, features = ["std"] }
 
 [[example]]
 name = "mjpeg_server"

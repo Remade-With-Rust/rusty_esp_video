@@ -223,3 +223,36 @@ names the parser and prints the input.
 | covered | result |
 |---|---|
 | `rtp::Header::parse`, `JpegDepayloader::push`, `JpegScan::parse` (20 000 packets), `udp::Header::parse` + `Reassembler::push` (30 000 datagrams), the Annex-B iterators and `mpegts::demux::parse` (5 000 streams biased toward start codes and sync bytes) | **one finding, fixed:** `rtp::Header::parse` read the extension-header length before checking the packet reached it (index out of bounds on a short packet with the X bit set); the read is bounds-checked now |
+
+## rusty_h264 0.14 and rusty_jpeg 0.4 from crates.io; rff as the second oracle (host, 2026-09-03)
+
+The upstream work Janus asked for landed and was released (`rusty_h264`
+0.13/0.14: `EncoderConfig::baseline`, borrowed `YuvPlanes`, `encode_into`,
+`request_keyframe`, `no_std` + `alloc`; `rusty_jpeg` 0.4: `no_std` +
+`alloc`, `SliceWriter`, packed YUYV input; rff: `rtp://` and `mpjpeg`
+inputs). Every git pin became a crates.io version and the wrapper moved to
+the chip API: the frame is borrowed, the access unit is written in place
+into the packetizer's buffer, a key frame is requested rather than a fresh
+encoder. `jpeg::SoftJpeg` (feature `jpeg`) is new: a raw frame into a JPEG
+packet through the image package's `jpeg::encode`.
+
+| gate | result |
+|---|---|
+| `cargo test --workspace` with `h264`, `jpeg` and the `-esp` `std` | **58 pass** — `h264_oracle` 4 (the QVGA stream reads in `ffprobe` as before, house decoder round-trip, IDR on the GOP), `ts_oracle` 3, `no_panic` 3, unit 39 (3 new: `SoftJpeg` colour bars → a baseline JPEG `JpegScan` accepts, YUYV coded as delivered, planar refused), `-esp` RTP and MJPEG-over-HTTP oracles |
+| `cargo clippy --workspace --all-targets` with the same features, `-D warnings` | clean |
+| `video-core --no-default-features --features alloc,h264` and `alloc,jpeg` | **riscv32imac, riscv32imafc and `xtensa-esp32s3-none-elf`** (esp toolchain, `build-std=core,alloc`): all six pass — the first time the H.264 and JPEG encoders compile for the S3's own bare-metal target |
+| `cargo deny check` | clean; the `rusty_h264` git allow-list row is gone |
+
+**rff (remade_ffmpeg_rs `e2c71cc`, built here) receiving the Janus streams**,
+each counted by `ffprobe -count_frames` on what rff wrote with `-c:v copy`:
+
+| stream | sender | rff | ffprobe |
+|---|---|---|---|
+| MJPEG over HTTP (`mpjpeg`) | `rusty_esp_arduino` sketch at `http://127.0.0.1:18080/stream`, colour bars 320×240 at 15 fps | `-i http://… -f mjpeg`, 12 s | `mjpeg, 320×240, 181 frames` |
+| RTP/JPEG (RFC 2435) | the sketch's `stream::rtp_to`, ~6 s | `-i rtp://0.0.0.0:5004?pt=26&timeout=3 -f mjpeg` | `mjpeg, 320×240, 98 frames`, 98 packets written |
+| RTP/H.264 (RFC 6184) | `rtp_send --h264`: the moving planar pattern → `encoder::H264` (0.14 chip API) → `H264Payloader`, 15 fps for 4 s: **60 frames, 4 IDRs, 68 datagrams, 17,595 B** | `-i rtp://0.0.0.0:5004?pt=96&timeout=3 -f mpegts` | **`h264, Constrained Baseline, 320×240, 60 frames`**; `ffmpeg -i out.ts -f null -` with an empty error log |
+
+Finding, reported upstream ([remade_ffmpeg_rs#12](https://github.com/Remade-With-Rust/remade_ffmpeg_rs/issues/12)): rff's documented `rtp://@:port` spelling
+receives nothing on Windows (the empty host binds the IPv6 unspecified
+address, IPv6-only there); `rtp://0.0.0.0:port` and `rtp://127.0.0.1:port`
+receive every packet. The rows above use the working spelling.

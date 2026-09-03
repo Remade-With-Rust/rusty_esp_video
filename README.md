@@ -55,7 +55,7 @@ Baseline, CAVLC, no lookahead, fixed GOP); a QVGA stream muxes to TS and
 says which codec each job gets on each chip. Host encode time 439-475 us a
 frame is the baseline the S3 number will be measured against, not a claim
 about the chip. The upstream `no_std` pass is done
-([rusty_h264 PR #7](https://github.com/Remade-With-Rust/rusty_h264/pull/7)),
+(`rusty_h264` 0.14 from crates.io: `no_std` + `alloc`, the chip API),
 so `h264` is `alloc` + `libm` and the crate **checks with the encoder on
 `riscv32imac` and `riscv32imafc`**: the encoder is a `cargo build` from a
 chip on the software side.

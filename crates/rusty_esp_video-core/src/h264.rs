@@ -1,46 +1,47 @@
 //! `rusty_h264` behind the [`VideoEncoder`] seam: H.264 Baseline from the
 //! house encoder, configured the way a chip wants it.
 //!
-//! This is the J5 encoder. Today it needs `std` — `rusty_h264` 0.12 is a
-//! host crate (threads, `std::env`, `Vec` everywhere) — so the feature that
-//! enables it implies `std` and the wrapper runs on the host and on Track A
-//! (ESP-IDF, `std`). The upstream `no_std` pass moves the same wrapper down
-//! the ladder unchanged: nothing here depends on anything but the encoder's
-//! public API, which is the point of writing it now.
+//! This is the J5 encoder, on `rusty_h264` 0.14's chip API. The crate is
+//! `no_std` + `alloc` without its `std` feature (`libm` carries the float
+//! math), so this wrapper runs on the host, on Track A (ESP-IDF) and on the
+//! bare-metal track alike; the `h264` feature needs only `alloc`.
 //!
 //! ## What the chip configuration is
 //!
 //! [`H264::configure`] takes the seam's [`EncoderConfig`] (bitrate, fps, GOP,
-//! quality) and builds a `rusty_h264` configuration a small CPU can run and
-//! any decoder can read:
+//! quality) and starts from `EncoderConfig::baseline` upstream — the one
+//! constructor both this crate and `rff -profile baseline -preset fast`
+//! select, so host and device produce the same bytes:
 //!
 //! - **Constrained Baseline, CAVLC**, no 8×8 transform, no B-frames, one
 //!   reference frame — the profile every hardware and browser decoder
-//!   accepts, and the cheapest to produce. (`rusty_h264` defaults to High +
-//!   CABAC and selects Baseline through an environment variable; a chip has
-//!   no environment, so the fields are set explicitly.)
-//! - **`Preset::Fast`**: SAD mode decision, integer-pel motion, 16×16 only.
-//! - **No lookahead, no scene cut**: `encode` returns one access unit per
-//!   input frame, so latency is one frame and there is nothing to `flush`
-//!   except at end of stream. The default configuration buffers 40 frames
-//!   for mb-tree; a live camera cannot.
+//!   accepts, and the cheapest to produce.
+//! - **`Preset::Fast`**: SAD mode decision, integer-pel motion, 16×16 only;
+//!   the half-pel plane cache is never built.
+//! - **No lookahead, no scene cut, no mb-tree**: `encode` returns one access
+//!   unit per input frame, so latency is one frame and there is nothing to
+//!   `flush` except at end of stream.
 //! - **Fixed GOP** = the seam's `gop` (`min_keyint` = `gop_size`), so key
-//!   frames land where the packetizer and a late joiner expect them.
+//!   frames land where the packetizer and a late joiner expect them; and
+//!   [`VideoEncoder::request_keyframe`] makes the *next* picture an IDR
+//!   without a fresh encoder (rate control and the frame counter survive).
 //! - `quality` 0–100 maps to QP 40–16 (`qp = 40 - quality * 24 / 100`) when
 //!   `bitrate_kbps` is 0; otherwise the encoder's average-bitrate control
 //!   takes `bitrate_kbps` and `fps`.
 //!
 //! ## Memory
 //!
-//! `rusty_h264` takes an owned `YuvFrame` (three `Vec<u8>`) and returns an
-//! owned `Vec<u8>`; the wrapper copies the borrowed planes in and the bytes
-//! out. That is one QVGA frame (115 KB) each way per picture — acceptable on
-//! a PSRAM board and the reason the mission plan's V3 names a borrowed-frame
-//! input path as an upstream item.
+//! The camera's planes are **borrowed**: the seam's [`Frame`] becomes a
+//! `YuvPlanes` view with its strides, and `Encoder::encode_into` writes the
+//! access unit **in place** into the packetizer's buffer — no copy of the
+//! frame, no `Vec` for the NALs. A buffer too small for the access unit is
+//! reported with the exact size it needed (the picture is lost, the encoder
+//! stays in step); size it for the worst case, an IDR at low QP, which can
+//! approach `width * height * 3 / 2`.
 
 use rusty_esp_core::error::Result;
 use rusty_esp_core::{Error, Frame, Geometry, PixelFormat, Planes};
-use rusty_h264::{ChromaFormat, Encoder, EncoderConfig as H264Config, Preset, Profile, YuvFrame};
+use rusty_h264::{EncodeError, Encoder, EncoderConfig as H264Config, YuvPlanes};
 
 use crate::annexb::contains_idr;
 use crate::encoder::{EncoderConfig, VideoEncoder};
@@ -51,8 +52,6 @@ pub struct H264 {
     geometry: Option<Geometry>,
     config: EncoderConfig,
     encoder: Option<Encoder>,
-    frame: YuvFrame,
-    force_idr: bool,
     frames: u32,
 }
 
@@ -80,8 +79,6 @@ impl H264 {
             geometry: None,
             config: EncoderConfig::default(),
             encoder: None,
-            frame: YuvFrame::black(16, 16),
-            force_idr: false,
             frames: 0,
         }
     }
@@ -93,19 +90,11 @@ impl H264 {
     }
 
     /// The `rusty_h264` configuration for `geometry` under `config`: the
-    /// chip profile described in the module docs.
+    /// upstream `baseline` constructor (the chip profile described in the
+    /// module docs) with the seam's GOP, rate and quality on top.
     #[must_use]
     pub fn chip_config(geometry: Geometry, config: &EncoderConfig) -> H264Config {
-        let mut cfg = H264Config::new(geometry.width as usize, geometry.height as usize);
-        cfg.profile = Profile::ConstrainedBaseline;
-        cfg.chroma = ChromaFormat::Yuv420;
-        cfg.cabac = false;
-        cfg.transform_8x8 = false;
-        cfg.bframes = 0;
-        cfg.num_ref_frames = 1;
-        cfg.preset = Preset::Fast;
-        cfg.lookahead = 0;
-        cfg.scenecut = 0;
+        let mut cfg = H264Config::baseline(geometry.width as usize, geometry.height as usize);
         let gop = if config.gop == 0 {
             1
         } else {
@@ -119,16 +108,6 @@ impl H264 {
         cfg
     }
 
-    /// Build (or rebuild, after `request_keyframe`) the underlying encoder.
-    fn start(&mut self) -> Result<()> {
-        let geometry = self.geometry.ok_or(Error::Unsupported)?;
-        let cfg = Self::chip_config(geometry, &self.config);
-        let enc = Encoder::new(cfg).map_err(|_| Error::Unsupported)?;
-        self.encoder = Some(enc);
-        self.force_idr = false;
-        Ok(())
-    }
-
     /// End of stream: whatever the encoder still holds. With no lookahead
     /// this is empty unless a frame is mid-flight; call it before tearing
     /// down a stream so a packetizer sees every access unit.
@@ -136,8 +115,7 @@ impl H264 {
         let Some(enc) = self.encoder.as_mut() else {
             return Ok(0);
         };
-        let bytes = enc.flush();
-        copy_out(&bytes, out)
+        enc.flush_into(out).map_err(map_err)
     }
 }
 
@@ -148,43 +126,30 @@ pub const fn qp_for_quality(quality: u8) -> u8 {
     (40 - q * 24 / 100) as u8
 }
 
-fn copy_out(bytes: &[u8], out: &mut [u8]) -> Result<usize> {
-    if out.len() < bytes.len() {
-        return Err(Error::BufferTooSmall {
-            needed: bytes.len(),
-        });
+fn map_err(e: EncodeError) -> Error {
+    match e {
+        EncodeError::BufferTooSmall { needed } => Error::BufferTooSmall { needed },
+        EncodeError::FrameMismatch => Error::InvalidGeometry,
+        _ => Error::Unsupported,
     }
-    out[..bytes.len()].copy_from_slice(bytes);
-    Ok(bytes.len())
 }
 
-/// Copy a borrowed planar frame into the encoder's owned frame.
-fn load_frame(dst: &mut YuvFrame, frame: &Frame<'_>) -> Result<()> {
-    let Geometry { width, height, .. } = frame.geometry;
-    let (w, h) = (width as usize, height as usize);
+/// The seam's planar frame as the encoder's borrowed view, strides and all.
+fn planes_of<'a>(frame: &Frame<'a>) -> Result<YuvPlanes<'a>> {
     let Planes::Planar { y, u, v } = &frame.planes else {
         return Err(Error::Unsupported);
     };
-    let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
-    if dst.width != w || dst.height != h {
-        *dst = YuvFrame::black(w, h);
-    }
-    copy_plane(&mut dst.y[..], y, w, h)?;
-    copy_plane(&mut dst.u[..], u, cw, ch)?;
-    copy_plane(&mut dst.v[..], v, cw, ch)?;
-    Ok(())
-}
-
-fn copy_plane(dst: &mut [u8], src: &rusty_esp_core::Plane<'_>, w: usize, h: usize) -> Result<()> {
-    if dst.len() < w * h {
-        return Err(Error::InvalidGeometry);
-    }
-    for row in 0..h {
-        let line = src.row(row).ok_or(Error::InvalidGeometry)?;
-        let line = line.get(..w).ok_or(Error::InvalidGeometry)?;
-        dst[row * w..(row + 1) * w].copy_from_slice(line);
-    }
-    Ok(())
+    let Geometry { width, height, .. } = frame.geometry;
+    YuvPlanes::new(
+        width as usize,
+        height as usize,
+        y.data,
+        u.data,
+        v.data,
+        y.stride,
+        u.stride.max(v.stride),
+    )
+    .ok_or(Error::InvalidGeometry)
 }
 
 impl VideoEncoder for H264 {
@@ -199,11 +164,12 @@ impl VideoEncoder for H264 {
         if geometry.width % 2 != 0 || geometry.height % 2 != 0 || geometry.width == 0 {
             return Err(Error::InvalidGeometry);
         }
+        let enc = Encoder::new(Self::chip_config(geometry, config)).map_err(map_err)?;
         self.geometry = Some(geometry);
         self.config = *config;
         self.frames = 0;
-        self.frame = YuvFrame::black(geometry.width as usize, geometry.height as usize);
-        self.start()
+        self.encoder = Some(enc);
+        Ok(())
     }
 
     fn encode<'b>(&mut self, frame: &Frame<'b>, out: &'b mut [u8]) -> Result<MediaPacket<'b>> {
@@ -211,15 +177,9 @@ impl VideoEncoder for H264 {
         if frame.geometry.width != geometry.width || frame.geometry.height != geometry.height {
             return Err(Error::InvalidGeometry);
         }
-        if self.force_idr || self.encoder.is_none() {
-            // `rusty_h264` has no keyframe request; a fresh encoder starts
-            // with an IDR, which is what the caller asked for.
-            self.start()?;
-        }
-        load_frame(&mut self.frame, frame)?;
         let enc = self.encoder.as_mut().ok_or(Error::Unsupported)?;
-        let bytes = enc.encode(&self.frame);
-        let n = copy_out(&bytes, out)?;
+        let planes = planes_of(frame)?;
+        let n = enc.encode_into(&planes, out).map_err(map_err)?;
         self.frames = self.frames.wrapping_add(1);
         let (data, _) = out.split_at_mut(n);
         let key = contains_idr(data);
@@ -227,13 +187,16 @@ impl VideoEncoder for H264 {
     }
 
     fn request_keyframe(&mut self) {
-        self.force_idr = true;
+        if let Some(enc) = self.encoder.as_mut() {
+            enc.request_keyframe();
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusty_h264::{Preset, Profile};
 
     #[test]
     fn quality_maps_to_a_sane_qp_range() {
@@ -244,14 +207,16 @@ mod tests {
     }
 
     #[test]
-    fn chip_config_is_constrained_baseline_cavlc_with_no_lookahead() {
+    fn chip_config_is_upstream_baseline_with_the_seams_gop_on_top() {
         let g = Geometry::new(320, 240, PixelFormat::Yuv420p).unwrap();
         let c = H264::chip_config(g, &EncoderConfig::default());
         assert_eq!(c.profile, Profile::ConstrainedBaseline);
         assert!(!c.cabac);
         assert!(!c.transform_8x8);
+        assert!(!c.mbtree);
         assert_eq!(c.bframes, 0);
         assert_eq!(c.lookahead, 0);
+        assert_eq!(c.scenecut, 0);
         assert_eq!(c.num_ref_frames, 1);
         assert_eq!(c.gop_size, 15);
         assert_eq!(c.min_keyint, 15);

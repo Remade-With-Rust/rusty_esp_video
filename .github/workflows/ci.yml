@@ -72,3 +72,5 @@ jobs:
           targets: ${{ matrix.target }}
       - run: cargo check -p rusty_esp_video-core --no-default-features --target ${{ matrix.target }}
       - run: cargo check -p rusty_esp_video-core --no-default-features --features alloc --target ${{ matrix.target }}
+      - run: cargo check -p rusty_esp_video-core --no-default-features --features alloc,h264 --target ${{ matrix.target }}
+      - run: cargo check -p rusty_esp_video-core --no-default-features --features alloc,jpeg --target ${{ matrix.target }}

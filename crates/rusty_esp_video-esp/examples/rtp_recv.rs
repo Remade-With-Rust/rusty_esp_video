@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use rusty_esp_core::error::{Error, Result};
-use rusty_esp_video_esp::udp_net::{receive_raw, receive_rtp_jpeg, Until};
+use rusty_esp_video_esp::udp_net::{Until, receive_raw, receive_rtp_jpeg};
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);

@@ -210,3 +210,16 @@ creates a second, not the transport.)
 - Wi-Fi throughput and frames per second on a XIAO ESP32-S3 Sense (V1).
 - **J5 on the chip:** `H264` on the S3 - FPS at QVGA, cycle budget, PSRAM use; the P4 hardware encoder column. The host baseline above is the comparison, not the claim (`docs/plans/hardware-verify.md`).
 - `rff -i udp://` playback of the same stream: `rff` is not built on this machine yet; ffmpeg stands in as the external oracle until it is.
+
+## The no-panic gate (host, 2026-09-02)
+
+Every parser that takes bytes from a wire, a store or a bus must return an
+error on bad input, never panic — the house rule made a test:
+`tests/no_panic.rs` feeds each one random inputs from an LCG (the same corpus
+on every machine) and mutations of a valid encoding (bit flips, overwrites,
+truncation, extension, insertion, removal), under `catch_unwind` so a failure
+names the parser and prints the input.
+
+| covered | result |
+|---|---|
+| `rtp::Header::parse`, `JpegDepayloader::push`, `JpegScan::parse` (20 000 packets), `udp::Header::parse` + `Reassembler::push` (30 000 datagrams), the Annex-B iterators and `mpegts::demux::parse` (5 000 streams biased toward start codes and sync bytes) | **one finding, fixed:** `rtp::Header::parse` read the extension-header length before checking the packet reached it (index out of bounds on a short packet with the X bit set); the read is bounds-checked now |

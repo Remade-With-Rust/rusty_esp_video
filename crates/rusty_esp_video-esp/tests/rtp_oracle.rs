@@ -8,8 +8,8 @@
 use std::io::Read;
 use std::net::UdpSocket;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -19,7 +19,7 @@ use rusty_esp_image_core::jpeg;
 use rusty_esp_image_core::source::{ImageSource, TestPattern};
 use rusty_esp_video_core::packet::{Codec, MediaPacket};
 use rusty_esp_video_esp::udp_net::{
-    receive_raw, receive_rtp_jpeg, RawUdpSender, RtpJpegSender, Until,
+    RawUdpSender, RtpJpegSender, Until, receive_raw, receive_rtp_jpeg,
 };
 
 const W: u32 = 320;

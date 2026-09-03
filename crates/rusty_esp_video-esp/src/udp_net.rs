@@ -14,7 +14,7 @@ use rusty_esp_video_core::esp_core::error::{Error, Result};
 use rusty_esp_video_core::esp_core::time::Micros;
 use rusty_esp_video_core::pacer::Budget;
 use rusty_esp_video_core::packet::MediaPacket;
-use rusty_esp_video_core::rtp::{Depayload, JpegDepayloader, JpegPayloader, HEADER_RESERVE};
+use rusty_esp_video_core::rtp::{Depayload, HEADER_RESERVE, JpegDepayloader, JpegPayloader};
 use rusty_esp_video_core::udp::{self, Framer, Reassembler, Reassembly};
 
 /// What a sender has done so far.
@@ -266,7 +266,7 @@ pub fn receive_rtp_jpeg(
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) =>
             {
-                continue
+                continue;
             }
             Err(_) => return Err(Error::Hardware),
         };
@@ -318,7 +318,7 @@ pub fn receive_raw(
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) =>
             {
-                continue
+                continue;
             }
             Err(_) => return Err(Error::Hardware),
         };

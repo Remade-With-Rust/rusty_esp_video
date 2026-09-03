@@ -99,7 +99,12 @@ impl Header {
         let ext = packet[0] & 0x10 != 0;
         let mut off = HEADER_LEN + 4 * cc;
         if ext {
-            let len = u16::from_be_bytes([packet[off + 2], packet[off + 3]]) as usize;
+            // The extension header itself must be there before its length
+            // can be read; a packet cut short is a bad packet, not a panic.
+            let Some(ext_header) = packet.get(off..off + 4) else {
+                return Err(Error::InvalidFormat);
+            };
+            let len = u16::from_be_bytes([ext_header[2], ext_header[3]]) as usize;
             off += 4 + 4 * len;
         }
         if packet.len() < off {

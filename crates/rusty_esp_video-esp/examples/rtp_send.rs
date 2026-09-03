@@ -16,7 +16,6 @@
 //! encoder is what the chip runs. The receivers: `rtp_recv` for JPEG,
 //! `rff -i rtp://@:5004` or ffmpeg with an SDP for either.
 
-use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
 use rusty_esp_core::error::{Error, Result};
@@ -173,6 +172,8 @@ fn main() -> Result<()> {
 /// and the RFC 6184 payloader, one datagram per RTP packet.
 #[cfg(feature = "h264")]
 mod h264 {
+    use std::net::UdpSocket;
+
     use super::*;
     use rusty_esp_core::frame::{Frame, Plane, Planes};
     use rusty_esp_video_core::encoder::{EncoderConfig, VideoEncoder};

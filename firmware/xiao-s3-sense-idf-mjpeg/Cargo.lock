@@ -118,6 +118,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
+name = "bytemuck"
+version = "1.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -887,6 +893,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "libm"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1004,6 +1016,12 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "portable-atomic"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
 name = "prettyplease"
@@ -1134,16 +1152,26 @@ name = "rusty_esp_core"
 version = "0.1.0"
 
 [[package]]
+name = "rusty_esp_dsp"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "rusty_esp_core",
+]
+
+[[package]]
 name = "rusty_esp_image-core"
 version = "0.1.0"
 dependencies = [
  "embedded-hal 1.0.0",
  "rusty_esp_core",
+ "rusty_esp_dsp",
 ]
 
 [[package]]
 name = "rusty_esp_image-esp"
 version = "0.1.0"
+source = "git+https://github.com/Remade-With-Rust/rusty_esp_image#df3686b405ef52d68cab507490011804b52b7fbc"
 dependencies = [
  "esp-idf-sys",
  "rusty_esp_image-core",
@@ -1155,6 +1183,7 @@ version = "0.1.0"
 dependencies = [
  "rusty_esp_core",
  "rusty_esp_image-core",
+ "rusty_h264",
 ]
 
 [[package]]
@@ -1162,6 +1191,52 @@ name = "rusty_esp_video-esp"
 version = "0.1.0"
 dependencies = [
  "rusty_esp_video-core",
+]
+
+[[package]]
+name = "rusty_h264"
+version = "0.12.0"
+source = "git+https://github.com/remade-with-rust/rusty_h264?branch=no-std#062cbb47dcb63e9426b7206da3107c3986550250"
+dependencies = [
+ "rusty_h264-common",
+ "rusty_h264-decoder",
+ "rusty_h264-encoder",
+]
+
+[[package]]
+name = "rusty_h264-common"
+version = "0.12.0"
+source = "git+https://github.com/remade-with-rust/rusty_h264?branch=no-std#062cbb47dcb63e9426b7206da3107c3986550250"
+dependencies = [
+ "bytemuck",
+ "once_cell",
+ "portable-atomic",
+ "wide",
+]
+
+[[package]]
+name = "rusty_h264-decoder"
+version = "0.12.0"
+source = "git+https://github.com/remade-with-rust/rusty_h264?branch=no-std#062cbb47dcb63e9426b7206da3107c3986550250"
+dependencies = [
+ "rusty_h264-common",
+]
+
+[[package]]
+name = "rusty_h264-encoder"
+version = "0.12.0"
+source = "git+https://github.com/remade-with-rust/rusty_h264?branch=no-std#062cbb47dcb63e9426b7206da3107c3986550250"
+dependencies = [
+ "rusty_h264-common",
+]
+
+[[package]]
+name = "safe_arch"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96b02de82ddbe1b636e6170c21be622223aea188ef2e139be0a5b219ec215323"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]
@@ -1510,6 +1585,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wide"
+version = "0.7.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce5da8ecb62bcd8ec8b7ea19f69a51275e91299be594ea5cc6ef7819e16cd03"
+dependencies = [
+ "bytemuck",
+ "safe_arch",
+]
+
+[[package]]
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1698,15 +1783,3 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
-
-[[patch.unused]]
-name = "rusty_esp_mid-core"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "rusty_esp_mid-esp"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "rusty_flac"
-version = "0.1.2"

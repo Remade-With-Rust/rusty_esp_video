@@ -38,4 +38,6 @@ allow-git = [
   "https://github.com/Remade-With-Rust/rusty_esp_image",
   # rusty_h264 on its `no-std` branch until that is released.
   "https://github.com/remade-with-rust/rusty_h264",
+  # through rusty_esp_image-core: the pixel kernels live in rusty_esp_dsp since D0
+  "https://github.com/Remade-With-Rust/rusty_esp_dsp",
 ]

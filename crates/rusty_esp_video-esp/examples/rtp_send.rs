@@ -14,7 +14,9 @@
 //! Constrained Baseline stream), `--kbps N` to cap the JPEG stream (frames
 //! that do not fit are dropped whole and counted). Everything below the
 //! encoder is what the chip runs. The receivers: `rtp_recv` for JPEG,
-//! `rff -i rtp://0.0.0.0:5004` (`?pt=26` or `?pt=96`) or ffmpeg with an SDP for either.
+//! `rff -i rtp://@:5004` (`?pt=26` or `?pt=96`; an rff older than
+//! remade_ffmpeg_rs `de24a83` needs `0.0.0.0` in place of `@` on Windows) or
+//! ffmpeg with an SDP for either.
 
 use std::time::{Duration, Instant};
 

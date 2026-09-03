@@ -252,7 +252,25 @@ each counted by `ffprobe -count_frames` on what rff wrote with `-c:v copy`:
 | RTP/JPEG (RFC 2435) | the sketch's `stream::rtp_to`, ~6 s | `-i rtp://0.0.0.0:5004?pt=26&timeout=3 -f mjpeg` | `mjpeg, 320×240, 98 frames`, 98 packets written |
 | RTP/H.264 (RFC 6184) | `rtp_send --h264`: the moving planar pattern → `encoder::H264` (0.14 chip API) → `H264Payloader`, 15 fps for 4 s: **60 frames, 4 IDRs, 68 datagrams, 17,595 B** | `-i rtp://0.0.0.0:5004?pt=96&timeout=3 -f mpegts` | **`h264, Constrained Baseline, 320×240, 60 frames`**; `ffmpeg -i out.ts -f null -` with an empty error log |
 
-Finding, reported upstream ([remade_ffmpeg_rs#12](https://github.com/Remade-With-Rust/remade_ffmpeg_rs/issues/12)): rff's documented `rtp://@:port` spelling
-receives nothing on Windows (the empty host binds the IPv6 unspecified
-address, IPv6-only there); `rtp://0.0.0.0:port` and `rtp://127.0.0.1:port`
-receive every packet. The rows above use the working spelling.
+Finding, reported upstream ([remade_ffmpeg_rs#12](https://github.com/Remade-With-Rust/remade_ffmpeg_rs/issues/12)): at `e2c71cc` rff's documented `rtp://@:port` spelling
+received nothing on Windows while `rtp://0.0.0.0:port` and
+`rtp://127.0.0.1:port` received every packet, so the rows above use that
+spelling. The cause the report gave (an IPv6-only bind) was wrong: nothing
+bound `[::]`. The empty host reached `UdpSocket::bind` as `":5004"`, which
+Windows resolves to the machine's own interface addresses, so the socket
+bound the LAN address and never saw loopback (on Linux that bind fails
+outright). Fixed upstream the same day in `de24a83` (PR #13): `udp_bind`
+spells the wildcard `0.0.0.0` itself, and RTCP packet types 200..=204 are no
+longer taken for RTP payload types 72..=76. The issue is closed.
+
+**Re-run on the fixed rff (`ddc3355`, built here) with the documented
+spelling, the same senders, counted the same way:**
+
+| stream | sender | rff | ffprobe |
+|---|---|---|---|
+| RTP/JPEG (RFC 2435) | `rtp_send` at 15 fps for 4 s: 60 frames, 300 datagrams, 334,438 B | `-i "rtp://@:5004?pt=26&timeout=3" -f mjpeg` | `mjpeg, 320×240, 60 frames`, 60 packets written |
+| RTP/JPEG (RFC 2435) | the sketch's `stream::rtp_to`, ~5 s | same | `mjpeg, 320×240, 82 frames`, 82 packets written |
+| RTP/H.264 (RFC 6184) | `rtp_send --h264` at 15 fps for 4 s: 60 frames, 4 IDRs, 68 datagrams, 17,595 B | `-i "rtp://@:5004?pt=96&timeout=3" -f mpegts` | **`h264, Constrained Baseline, 320×240, 60 frames`**; `ffmpeg -i out.ts -f null -` with an empty error log |
+
+Either spelling works from `de24a83` on; the example's doc comment names the
+documented one again.

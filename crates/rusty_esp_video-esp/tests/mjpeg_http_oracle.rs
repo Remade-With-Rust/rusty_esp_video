@@ -98,6 +98,125 @@ fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }
 
+/// Like [`spawn_server`], gated on `token`.
+fn spawn_gated_server(
+    token: &str,
+    connections: usize,
+) -> (String, mpsc::Receiver<(ServeStats, Vec<Served>)>) {
+    let server = MjpegHttpServer::bind("127.0.0.1:0").unwrap().gated(token);
+    let addr = server.local_addr().unwrap().to_string();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let camera = JpegPattern::new();
+        let mut enc = Passthrough::default();
+        enc.configure(camera.geometry(), &EncoderConfig::default())
+            .unwrap();
+        let mut source = EncodedSource::new(camera, enc, 32 * 1024, 0).unwrap();
+        let mut scratch = vec![0u8; 32 * 1024 + 1];
+        let mut stats = ServeStats::default();
+        let mut served = Vec::new();
+        for _ in 0..connections {
+            served.push(
+                server
+                    .serve_one(&mut source, &mut scratch, &mut stats)
+                    .unwrap(),
+            );
+        }
+        tx.send((stats, served)).unwrap();
+    });
+    (addr, rx)
+}
+
+/// One request, the whole response (or its first `limit` bytes).
+fn request(addr: &str, head: &str, limit: usize) -> Vec<u8> {
+    let mut s = TcpStream::connect(addr).unwrap();
+    s.write_all(head.as_bytes()).unwrap();
+    let mut out = Vec::new();
+    let mut buf = [0u8; 4096];
+    while out.len() < limit {
+        match s.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => out.extend_from_slice(&buf[..n]),
+        }
+    }
+    out
+}
+
+#[test]
+fn a_gated_server_refuses_without_the_token_and_the_page_sets_the_cookie() {
+    const TOKEN: &str = "7Ns3kQxYbVfR2pLmZ9wHdE";
+    let (addr, rx) = spawn_gated_server(TOKEN, 7);
+
+    // the page and the stream, bare: refused
+    let bare = request(&addr, "GET / HTTP/1.1\r\nHost: janus\r\n\r\n", 4096);
+    assert!(
+        bare.starts_with(b"HTTP/1.1 403"),
+        "{}",
+        String::from_utf8_lossy(&bare)
+    );
+    assert!(find(&bare, b"needs its token").is_some());
+    let bare = request(&addr, "GET /stream HTTP/1.1\r\nHost: janus\r\n\r\n", 4096);
+    assert!(bare.starts_with(b"HTTP/1.1 403"));
+    // a wrong token, a prefix of the right one: refused
+    let wrong = request(
+        &addr,
+        "GET /?t=7Ns3kQxYbVfR2pLmZ9wHd HTTP/1.1\r\nHost: janus\r\n\r\n",
+        4096,
+    );
+    assert!(wrong.starts_with(b"HTTP/1.1 403"));
+
+    // the URL printed at boot: the page, and it sets the cookie for /stream
+    let page = request(
+        &addr,
+        &format!("GET /?t={TOKEN} HTTP/1.1\r\nHost: janus\r\n\r\n"),
+        8192,
+    );
+    let page = String::from_utf8_lossy(&page);
+    assert!(page.starts_with("HTTP/1.1 200 OK"), "{page}");
+    assert!(page.contains(&format!(
+        "Set-Cookie: t={TOKEN}; Path=/; SameSite=Strict; HttpOnly\r\n"
+    )));
+    assert!(page.contains("<img src=\"/stream\""));
+
+    // the browser then asks for /stream with the cookie: frames come
+    let stream = request(
+        &addr,
+        &format!("GET /stream HTTP/1.1\r\nHost: janus\r\nCookie: theme=dark; t={TOKEN}\r\n\r\n"),
+        64 * 1024,
+    );
+    assert!(stream.starts_with(b"HTTP/1.1 200 OK"));
+    assert!(find(&stream, b"multipart/x-mixed-replace").is_some());
+    assert!(find(&stream, b"\xff\xd8").is_some(), "a JPEG part arrived");
+
+    // ffmpeg's way in: the token on the stream URL itself
+    let direct = request(
+        &addr,
+        &format!("GET /stream?t={TOKEN} HTTP/1.1\r\nHost: janus\r\n\r\n"),
+        64 * 1024,
+    );
+    assert!(direct.starts_with(b"HTTP/1.1 200 OK"));
+
+    // 404 stays 404 even with the token: the gate is not a router
+    let nope = request(
+        &addr,
+        &format!("GET /nope?t={TOKEN} HTTP/1.1\r\nHost: janus\r\n\r\n"),
+        4096,
+    );
+    assert!(nope.starts_with(b"HTTP/1.1 404"));
+
+    let (stats, served) = rx.recv().unwrap();
+    assert_eq!(stats.connections, 7);
+    assert_eq!(stats.streams, 2);
+    assert_eq!(
+        &served[..3],
+        &[Served::Forbidden, Served::Forbidden, Served::Forbidden]
+    );
+    assert_eq!(served[3], Served::Index);
+    assert!(matches!(served[4], Served::Stream { frames } if frames >= 1));
+    assert!(matches!(served[5], Served::Stream { frames } if frames >= 1));
+    assert_eq!(served[6], Served::NotFound);
+}
+
 #[test]
 fn rust_client_reads_valid_jpeg_parts_and_index_and_404() {
     let (addr, rx) = spawn_server(3);

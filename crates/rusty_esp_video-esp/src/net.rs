@@ -12,7 +12,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use rusty_esp_video_core::esp_core::error::{Error, Result};
-use rusty_esp_video_core::mjpeg_http::Multipart;
+use rusty_esp_video_core::mjpeg_http::{Gate, Multipart, TOKEN_PARAM};
 use rusty_esp_video_core::sink::PacketSink;
 use rusty_esp_video_core::source::PacketSource;
 
@@ -64,6 +64,9 @@ pub enum Served {
     NotFound,
     /// A `405` (non-GET).
     MethodNotAllowed,
+    /// A `403`: the server is gated and the request carried no token, or the
+    /// wrong one.
+    Forbidden,
     /// The request head was malformed or too large; a `400` was sent.
     BadRequest,
 }
@@ -74,6 +77,8 @@ pub struct MjpegHttpServer {
     listener: TcpListener,
     /// Read timeout for the request head.
     pub request_timeout: Duration,
+    /// The viewing token `/` and `/stream` require, if any.
+    token: Option<String>,
 }
 
 impl MjpegHttpServer {
@@ -82,7 +87,23 @@ impl MjpegHttpServer {
         Ok(MjpegHttpServer {
             listener: TcpListener::bind(addr)?,
             request_timeout: Duration::from_secs(5),
+            token: None,
         })
+    }
+
+    /// Require `token` on `/` and `/stream` ([`Gate`]): `?t=<token>` on the
+    /// URL, or the `t` cookie the index page sets when opened that way, so
+    /// the page's own `<img src="/stream">` passes. Everything else is `403`.
+    #[must_use]
+    pub fn gated(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
+    }
+
+    /// The token this server requires, if it is gated.
+    #[must_use]
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
     }
 
     /// Where the server listens.
@@ -104,7 +125,8 @@ impl MjpegHttpServer {
         let _ = stream.set_nodelay(true);
         let _ = stream.set_read_timeout(Some(self.request_timeout));
         let mut stream = stream;
-        let request = match read_request(&mut stream) {
+        let gate = self.token.as_deref().map(Gate::new);
+        let request = match read_request(&mut stream, gate.as_ref()) {
             Ok(r) => r,
             Err(()) => {
                 let _ = stream.write_all(
@@ -115,7 +137,21 @@ impl MjpegHttpServer {
             }
         };
         match request {
-            Request::Get(path) if path == STREAM_PATH => {
+            Request::Get {
+                admitted: false, ..
+            } => {
+                let body: &[u8] =
+                    b"403 Forbidden: this page needs its token, the URL printed at boot\n";
+                let mut num = [0u8; 20];
+                let len = rusty_esp_video_core::fmt_u64_pub(body.len() as u64, &mut num);
+                let _ = stream.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: ");
+                let _ = stream.write_all(len.as_bytes());
+                let _ = stream.write_all(b"\r\n\r\n");
+                let _ = stream.write_all(body);
+                stats.other += 1;
+                Ok(Served::Forbidden)
+            }
+            Request::Get { path, .. } if path == STREAM_PATH => {
                 let mut mp = Multipart::new(TcpSink(stream));
                 if mp.write_response_head().is_err() {
                     return Ok(Served::Stream { frames: 0 });
@@ -136,17 +172,27 @@ impl MjpegHttpServer {
                 }
                 Ok(Served::Stream { frames })
             }
-            Request::Get(path) if path == "/" || path == "/index.html" => {
+            Request::Get { path, .. } if path == "/" || path == "/index.html" => {
                 let mut head = [0u8; 20];
                 let len = rusty_esp_video_core::fmt_u64_pub(INDEX_HTML.len() as u64, &mut head);
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: ");
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n");
+                if let Some(token) = self.token.as_deref() {
+                    // the page's <img src="/stream"> carries the token as a
+                    // cookie; the browser keeps it for this origin only
+                    let _ = stream.write_all(b"Set-Cookie: ");
+                    let _ = stream.write_all(TOKEN_PARAM.as_bytes());
+                    let _ = stream.write_all(b"=");
+                    let _ = stream.write_all(token.as_bytes());
+                    let _ = stream.write_all(b"; Path=/; SameSite=Strict; HttpOnly\r\n");
+                }
+                let _ = stream.write_all(b"Content-Length: ");
                 let _ = stream.write_all(len.as_bytes());
                 let _ = stream.write_all(b"\r\n\r\n");
                 let _ = stream.write_all(INDEX_HTML.as_bytes());
                 stats.other += 1;
                 Ok(Served::Index)
             }
-            Request::Get(_) => {
+            Request::Get { .. } => {
                 let _ = stream.write_all(
                     b"HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
                 );
@@ -175,12 +221,22 @@ impl MjpegHttpServer {
 }
 
 enum Request<'a> {
-    Get(&'a str),
+    Get {
+        path: &'a str,
+        /// Whether the gate (if any) let this request through: the token on
+        /// the query string or in the `Cookie` header. Always true ungated.
+        admitted: bool,
+    },
     Other,
 }
 
-/// Read the request head into a fixed buffer and pick out method and path.
-fn read_request(stream: &mut TcpStream) -> std::result::Result<Request<'static>, ()> {
+/// Read the request head into a fixed buffer and pick out method, path, and
+/// — when `gate` is set — whether the target or the `Cookie` header carries
+/// the token.
+fn read_request(
+    stream: &mut TcpStream,
+    gate: Option<&Gate<'_>>,
+) -> std::result::Result<Request<'static>, ()> {
     // The path is copied into a leaked-free static buffer? No: we return a
     // borrowed view over a thread-local scratch instead.
     thread_local! {
@@ -206,18 +262,31 @@ fn read_request(stream: &mut TcpStream) -> std::result::Result<Request<'static>,
         let line = text.lines().next().ok_or(())?;
         let mut parts = line.split_whitespace();
         let method = parts.next().ok_or(())?;
-        let path = parts.next().ok_or(())?;
+        let target = parts.next().ok_or(())?;
         if method != "GET" {
             return Ok(Request::Other);
         }
-        // Strip a query string; the path is short, so copy it into a static
+        let admitted = match gate {
+            None => true,
+            Some(gate) => {
+                let cookie = text
+                    .lines()
+                    .skip(1)
+                    .filter_map(|l| l.split_once(':'))
+                    .find(|(name, _)| name.trim().eq_ignore_ascii_case("cookie"))
+                    .map(|(_, value)| value.trim());
+                gate.admits(target, cookie)
+            }
+        };
+        // Strip the query string; the path is short, so map it onto a static
         // pool of known paths rather than allocate.
-        let path = path.split('?').next().unwrap_or(path);
-        Ok(match path {
-            "/stream" => Request::Get(STREAM_PATH),
-            "/" => Request::Get("/"),
-            "/index.html" => Request::Get("/index.html"),
-            _ => Request::Get("/<other>"),
-        })
+        let path = target.split('?').next().unwrap_or(target);
+        let path = match path {
+            "/stream" => STREAM_PATH,
+            "/" => "/",
+            "/index.html" => "/index.html",
+            _ => "/<other>",
+        };
+        Ok(Request::Get { path, admitted })
     })
 }

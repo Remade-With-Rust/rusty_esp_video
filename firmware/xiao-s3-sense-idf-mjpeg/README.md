@@ -72,6 +72,30 @@ The log prints `stream at http://<ip>/stream`. Open it in a browser, or:
 ffmpeg -i http://<ip>/stream -frames:v 150 -f null -      # 10 s at 15 fps
 ```
 
+## Measuring V1 on a laptop with one radio
+
+Joining the board's network costs this machine its internet, and with it any
+session driving the work. `tools/v1-offline.ps1` does the whole thing
+unattended instead: it saves the current network, joins the board's, measures,
+writes everything to `v1-results.txt`, and comes back.
+
+```sh
+powershell -ExecutionPolicy Bypass -File tools/v1-offline.ps1 -Seconds 60
+```
+
+It captures three separate things, because they are three different
+questions: what the stream claims to be (ffprobe), how many frames actually
+decode (two ffmpeg arms, each timed against the wall clock), and how many
+bytes cross the link (its own request, so a byte count is never derived from
+a decode loop). The board's serial console is captured at the same time with
+`--no-reset`, so its own frame count sits beside ffmpeg's -- self-metric and
+oracle, both recorded.
+
+The reconnect is in a `finally` block so it happens even if the measurement
+throws, and the profile carrying the passphrase is deleted afterwards rather
+than left in the machine's store. If the script is killed outright, the Wi-Fi
+picker is the backstop.
+
 ## The kill test (from the plan, I1 + V1)
 
 - `http://<ip>/stream` opens in a browser at 320×240.

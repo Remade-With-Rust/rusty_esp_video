@@ -4,7 +4,8 @@ XIAO ESP32-S3 Sense, Track A (`std` on ESP-IDF): the OV2640 in JPEG mode →
 `rusty_esp_image` (`IdfCamera` over esp32-camera) → `rusty_esp_video`
 (`Passthrough`, `EncodedSource`, `Multipart`) → `MjpegHttpServer` on port 80.
 
-**Status: written, not yet compiled or flashed.** The host half of this
+**Status: builds; access-point mode added 2026-09-06 so V1 needs no router.**
+The host half of this
 exact pipeline runs today: `cargo run -p rusty_esp_video-esp --features std
 --example mjpeg_server` serves colour bars at `http://127.0.0.1:8080/stream`,
 and `tests/mjpeg_http_oracle.rs` reads it back with ffmpeg. What this project
@@ -28,11 +29,42 @@ the target dir then sits outside the project, `.cargo/config.toml` pins
 `CARGO_WORKSPACE_DIR` so esp-idf-sys still reads this manifest (without it the
 camera component is silently never fetched).
 
+There are two ways onto a network, and which one runs is decided at build
+time by what is set.
+
+**Join one** (the default when credentials are present):
+
 ```sh
-export CARGO_TARGET_DIR=C:/janus-t                 # Windows only
+export CARGO_TARGET_DIR=C:/janus-s3                # Windows only
 JANUS_WIFI_SSID=yournet JANUS_WIFI_PASS=yourpass cargo build --release
 JANUS_WIFI_SSID=yournet JANUS_WIFI_PASS=yourpass cargo run --release   # espflash flash --monitor
 ```
+
+**Run one.** With no credentials set, the board hosts its own 2.4 GHz
+network and a laptop joins that instead. This is what a camera out of range
+of the house has to do, and it is what makes the V1 row measurable on a bench
+with no router at all.
+
+```sh
+echo -n 'your chosen passphrase' > ap-pass.txt     # gitignored; 8-63 bytes
+export CARGO_TARGET_DIR=C:/janus-s3
+JANUS_AP_PASS=$(cat ap-pass.txt) cargo build --release
+JANUS_AP_PASS=$(cat ap-pass.txt) cargo run --release
+```
+
+The network is `janus-cam` unless `JANUS_AP_SSID` says otherwise, and a
+second board on the same bench needs its own name or clients cannot tell
+them apart. WPA2 only: an open access point would serve the camera to the
+street, so the passphrase is required and refused outside 8 to 63 bytes.
+
+**The passphrase never appears anywhere but your shell.** It reaches the
+build through an environment variable rather than a flag, `ap-pass.txt` is
+gitignored, and the firmware logs the network's name and address but never
+its key.
+
+Then join `janus-cam` from the laptop's Wi-Fi picker. The board is at
+`192.168.71.1`, so the stream is `http://192.168.71.1/stream`. Note that the
+laptop leaves its own network to do this, since it has one adapter.
 
 The log prints `stream at http://<ip>/stream`. Open it in a browser, or:
 

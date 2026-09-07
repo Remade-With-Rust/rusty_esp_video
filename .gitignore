@@ -8,3 +8,8 @@ Thumbs.db
 
 # Umbrella-only sibling patches (generated in the Janus checkout, see docs/plans/janus-mission.md section 9)
 /.cargo/config.toml
+
+# The access-point passphrase for the J1 firmware, kept out of the tree on
+# purpose: it is read into JANUS_AP_PASS at build time and never printed,
+# never logged by the firmware, and never committed.
+ap-pass.txt

@@ -13,3 +13,10 @@ Thumbs.db
 # purpose: it is read into JANUS_AP_PASS at build time and never printed,
 # never logged by the firmware, and never committed.
 ap-pass.txt
+
+# Output from tools/v1-offline.ps1. The numbers belong in docs/LEDGER.md with
+# their method line; these are the raw working files.
+firmware/*/v1-results.*
+firmware/*/v1-serial*.txt
+firmware/*/v1-preflight-serial.txt
+firmware/*/v1-raw.mjpeg

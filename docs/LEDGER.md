@@ -389,3 +389,31 @@ exists: ffmpeg's bare `rtp://` input opened on the live stream and decoded
 170 frames in 15 s — 11.3 fps against the board's 12.0 — so the header
 counter and a real decoder agree on the same packets. The full-ten-minute
 unicast row is still the stricter form and still open.
+
+## V2, strict form: RTP/JPEG unicast for ten minutes over the board's own AP (2026-09-11)
+
+Same sender, same counter, same client as the broadcast row above; the
+destination the laptop's lease (`192.168.71.2:5004`) instead of the
+broadcast address, for 600 s. Method line: `sender=rtp_to(unicast:5004)
+client=802.11n-95% listen=600s metric=rtp-header-count loss=sequence-gaps
+self_metric=board-TxStats window=~550s-associated`.
+
+| | laptop | board |
+|---|---:|---:|
+| packets | 20,119 | at 36.0/s |
+| frames (marker bit) | 6,603 | at 12.0/s |
+| **lost by sequence** | **1 of 20,120 — 0.005 %** | dropped 0 |
+
+**Broadcast 2.66 %, unicast 0.005 %.** That is the whole difference between
+the two rows and it is 802.11's, not ours: unicast frames are acknowledged
+and retried, broadcast frames are sent once at the lowest basic rate. The
+one lost packet in ten minutes is the unicast figure at 95 % signal in a
+house.
+
+The window is honest about its edge. The board's serial puts the rekey at
+592 s of its uptime and the Killer driver's drop at 608 s; the runner
+re-associated at 664 s — after this listen ended at 658 s — so the listen's
+last ~50 s were dark. No later packet existed to expose that as a gap, which
+is why the sequence method reads 1 lost while the rate method reads a 3.9 %
+deficit: the deficit is the dark tail, and the single packet is the loss.
+Both are reported; the loss figure is over the ~550 s associated.

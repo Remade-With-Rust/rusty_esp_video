@@ -372,3 +372,20 @@ setting `JANUS_RTP_DEST` to it, is the row's stricter form and is not taken
 yet. ffmpeg's bare `rtp://` input did not open on the stream (0 frames in
 15 s), consistent with the loopback self-test before the header counter was
 written; an SDP-driven decode is the second oracle to add.
+
+## M4's stream count, and a 60-second V2 point (2026-09-11)
+
+**M4 — `HttpStats` against the laptop's count.** The sketch's `/stream` over
+the board's own AP, token-gated: the board's `HttpStats { streams: 1,
+frames: 503 }` for the connection against ffmpeg's **500 decoded** with
+`-t 20` (stream time at a nominal 25 fps; 42 s of wall at the board's
+12.5). Three frames apart, all three at the cut. Self-metric and oracle
+agree.
+
+**V2 at 60 s, same method as the 600-s row:** 2,171 packets, 708 frames,
+**1.81 % lost by sequence, 1.17 % by rate** (36.18 vs the board's 36.61
+packets/s), sender dropped 0, broadcast at 95 %. And the second oracle now
+exists: ffmpeg's bare `rtp://` input opened on the live stream and decoded
+170 frames in 15 s — 11.3 fps against the board's 12.0 — so the header
+counter and a real decoder agree on the same packets. The full-ten-minute
+unicast row is still the stricter form and still open.

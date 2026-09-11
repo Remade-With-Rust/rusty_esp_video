@@ -290,10 +290,17 @@ try {
     foreach ($arm in 1, 2) {
         Say "arm $arm of 2: $Seconds s of $url"
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        $err = & ffmpeg -hide_banner -nostats -i $url -t $Seconds -f null - 2>&1 | Out-String
+        # cmd owns the stderr redirect, so PowerShell 5.1 never wraps ffmpeg's
+        # banner in an ErrorRecord that $ErrorActionPreference = "Stop" throws
+        # on -- exactly what killed arm 1 one frame in on 2026-09-11. -progress
+        # puts frame=N on stdout, where a count belongs. Proven on a lavfi
+        # source before it was written here.
+        $errFile = "v1-arm$arm.stderr.txt"
+        $out = cmd /c "ffmpeg -hide_banner -nostats -i `"$url`" -t $Seconds -progress pipe:1 -f null - 2>`"$errFile`""
+        $err = if (Test-Path $errFile) { Get-Content $errFile -Raw } else { "" }
         $sw.Stop()
         $frames = 0
-        $m = [regex]::Matches($err, 'frame=\s*(\d+)')
+        $m = [regex]::Matches(($out -join "`n"), 'frame=\s*(\d+)')
         if ($m.Count -gt 0) { $frames = [int]$m[$m.Count - 1].Groups[1].Value }
         $secs = $sw.Elapsed.TotalSeconds
         $fps = if ($secs -gt 0) { [math]::Round($frames / $secs, 3) } else { 0 }
@@ -314,7 +321,8 @@ try {
     Say "measuring bytes off the link for $Seconds s"
     $raw = "v1-raw.mjpeg"
     $sw = [Diagnostics.Stopwatch]::StartNew()
-    & ffmpeg -hide_banner -nostats -v error -i $url -t $Seconds -c copy -f mpjpeg $raw -y 2>&1 | Out-Null
+    # Same reason as the arms: never let 5.1 see ffmpeg's stderr.
+    $null = cmd /c "ffmpeg -hide_banner -nostats -v error -i `"$url`" -t $Seconds -c copy -f mpjpeg `"$raw`" -y 2>`"v1-throughput.stderr.txt`""
     $sw.Stop()
     if (Test-Path $raw) {
         $bytes = (Get-Item $raw).Length

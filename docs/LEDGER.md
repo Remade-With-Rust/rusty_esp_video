@@ -337,3 +337,38 @@ second joined for real — the antenna had not been on the board — and then
 PowerShell 5.1 threw on ffmpeg's opening banner via `2>&1` and killed the
 decode one frame in. Both are in `offline-runs.md` with their fixes, and both
 were proven to fail on purpose before being called fixed.
+
+## V2 on the XIAO: RTP/JPEG loss over the board's own access point (2026-09-11)
+
+The porch-cam sketch's `stream::rtp_to` (the same RFC 2435 sender as
+`rtp_send`, `TxStats` from `udp_net`) to the AP's **broadcast** address for
+600 s of board time; the laptop counting from the packets themselves — a raw
+UDP reader parsing the 12-byte RTP header for packets, marker-bit frames and
+sequence-number gaps — with ffmpeg as a second oracle. Method line:
+`sender=rtp_to(broadcast:5004) client=802.11n-95% listen=600s
+metric=rtp-header-count loss=sequence-gaps second_oracle=ffmpeg-rtp
+self_metric=board-TxStats window=546s-associated`.
+
+| | laptop | board |
+|---|---:|---:|
+| packets/s | 35.04 | 36.02 |
+| frames/s | 11.64 | 12.00 |
+| packets per frame | 3.01 | 3.00 |
+| dropped at the sender | — | **0** |
+| **packet loss** | **2.66 % by sequence** (522 of 19,655) | **2.7 % by rate** |
+
+Two independent methods agree: the sequence gaps say 2.66 %, and the
+laptop's packet rate against the board's over the **546 s the laptop was
+actually associated** says 2.7 %. (The runner's own rate-based figure read
+11.5 % because it divided by the nominal 600 s; the laptop left the AP at
+15:25:14 — the 600-s group-key rekey, espino ledger — and the sequence
+method is immune to that.)
+
+**Caveat that belongs in the number:** the sender is broadcast, and 802.11
+delivers broadcast frames at the lowest basic rate with no acknowledgement
+and no retry. 2.7 % is the broadcast figure at 95 % signal in a house; a
+unicast run to the client's address, which the sketch can be built for by
+setting `JANUS_RTP_DEST` to it, is the row's stricter form and is not taken
+yet. ffmpeg's bare `rtp://` input did not open on the stream (0 frames in
+15 s), consistent with the loopback self-test before the header counter was
+written; an SDP-driven decode is the second oracle to add.

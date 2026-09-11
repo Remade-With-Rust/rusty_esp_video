@@ -367,6 +367,13 @@ finally {
     }
     if ($saved -and -not $PreflightOnly) {
         Say "returning to '$saved'"
+        # Disconnect first. On 2026-09-11 a bare `connect` to the saved
+        # network did nothing for 60 s while the adapter was still associated
+        # with the AP; what brought the laptop back was deleting the AP's
+        # profile, which forced the disconnect. Windows then auto-joined
+        # home in six seconds.
+        netsh wlan disconnect interface="$iface" 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
         netsh wlan connect name="$saved" interface="$iface" 2>&1 | Out-Null
         $R.reconnected = Wait-Until {
             Test-NetConnection -ComputerName "1.1.1.1" -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue

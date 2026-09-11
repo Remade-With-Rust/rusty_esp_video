@@ -274,3 +274,66 @@ spelling, the same senders, counted the same way:**
 
 Either spelling works from `de24a83` on; the example's doc comment names the
 documented one again.
+
+## V1 on the XIAO ESP32-S3: fps and throughput over the board's own access point (2026-09-11)
+
+The first board row taken with the laptop on a network the board hosts, so
+no router was in the line. `firmware/xiao-s3-sense-idf-mjpeg` (Track A,
+ESP-IDF v5.5.1, esp-idf-svc 0.52) hosting `janus-cam`, WPA2, channel 1; the
+laptop's Killer BE200 joined at 802.11n/40 MHz at 98 % signal and took DHCP
+lease 192.168.71.2 from the board. Run unattended by `tools/v1-offline.ps1`
+because joining the board costs the laptop its internet; the procedure is
+`docs/plans/offline-runs.md`.
+
+Method line: `board=xiao-esp32s3-sense radio=softap-wpa2-ch1 client=802.11n-98%
+geometry=320x240 format=mjpeg fps_cap=15 oracle=ffmpeg-8.1.2-decode+ffprobe
+metric=decoded-frames/stopwatch arms=2 stream_secs=60 self_metric=board-serial
+rtt=2/3/7ms`.
+
+| arm | ffmpeg frames | wall s | **fps** | board sent | board produced | board dropped at cap |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 | 1,500 | 108.597 | **13.813** | 1,502 | 1,503 | 1,478 |
+| 2 | 1,500 | 108.422 | **13.835** | 1,502 | 1,503 | 1,485 |
+
+**The two arms agree to 0.16 %**, and the oracle and the self-metric agree to
+two frames: the board sent 1,502 per arm, ffmpeg counted 1,500 because
+`-t 60` is 60 s of *stream* time at MJPEG's nominal 25 fps and cut the last
+two in flight. That is also why a "60-second" arm took 108 s of wall clock;
+the fps above divides by the stopwatch, not by 60.
+
+| throughput, own pass | |
+|---|---:|
+| bytes over the link | 6,915,677 |
+| seconds | 108.497 |
+| **KiB/s** | **62.2** |
+| Mbit/s | 0.510 |
+| bytes per frame, derived | ~4,610 |
+
+### The finding: cap-limited, not link-limited
+
+The board's counters give the whole pipeline. Per arm it produced 1,503 and
+discarded 1,478 at the frame-rate cap, so the camera grabbed 2,981 frames in
+108.4 s — **27.5 fps, matching I1's 27.8 fps off this sensor**. `FPS_CAP = 15`
+against a 27.6 fps source is an integer frame-skip, and one-in-two gives
+13.8, not 15. Wi-Fi then delivered 1,502 of the 1,503 offered. So the
+delivered rate is set by the cap's granularity against the sensor rate, and
+the link — 3 ms RTT, 0.51 Mbit/s used of an 802.11n channel at 98 % — had
+an order of magnitude to spare. Raising the cap to the sensor rate, or making
+the cap a ratio rather than a skip, is where the next fps comes from; the
+radio is not.
+
+### What this row does not close
+
+The `rff` half of V1 stays open: there is no `rff` binary built on this
+machine. ffprobe read the bitstream as `mjpeg, 320x240, yuvj422p`; that is
+the external oracle this row rests on.
+
+### What the runner had to learn first
+
+Three trips. The first reported a join that never happened (a PowerShell
+function's log line rode along in its return value, so a timed-out wait came
+back truthy, and Windows had quietly fallen back to the home network). The
+second joined for real — the antenna had not been on the board — and then
+PowerShell 5.1 threw on ffmpeg's opening banner via `2>&1` and killed the
+decode one frame in. Both are in `offline-runs.md` with their fixes, and both
+were proven to fail on purpose before being called fixed.

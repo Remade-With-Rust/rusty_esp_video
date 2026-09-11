@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Measure the V1 row against a board hosting its own network, on a laptop with
   one radio.
@@ -70,7 +70,11 @@ $R = [ordered]@{
 
 function Say($text) {
     $line = "[{0:HH:mm:ss}] {1}" -f (Get-Date), $text
-    Write-Output $line
+    # Write-Host, never Write-Output: a Say inside a function that returns a
+    # value would otherwise ride along in that value. On 2026-09-11 that made a
+    # timed-out Wait-Until return @("gave up...", $false), which is truthy,
+    # and the runner reported a join that never happened.
+    Write-Host $line
     Add-Content -Path $OutFile -Value $line -Encoding utf8
 }
 function Record($text) { Add-Content -Path $OutFile -Value $text -Encoding utf8 }
@@ -137,7 +141,7 @@ try {
     $seen = ""
     if (Test-Path $Espino) {
         $pre = "v1-preflight-serial.txt"
-        $null = & $Espino monitor --port $SerialPort --board $Board --no-reset --timeout 6 `
+        $null = & $Espino monitor --port $SerialPort --board $Board --timeout 8 `
             2>&1 | Tee-Object -FilePath $pre
         $seen = (Get-Content $pre -Raw -ErrorAction SilentlyContinue)
     }
@@ -146,7 +150,7 @@ try {
     Step "firmware-hosting" ($hosting -or $streaming) `
         $(if ($hosting) { "the board says it is hosting $ApSsid" }
           elseif ($streaming) { "the board is serving a stream" }
-          else { "no 'hosting' line seen on $SerialPort in 6 s -- it may simply be idle past its banner; the join below is the real test" })
+          else { "no 'hosting' line seen on $SerialPort in 6 s -- the board did not print its banner after a reset, so it is not running the hosting firmware" })
 
     # Can we see the network from here? ADVISORY, not fatal, and the reason is
     # that the instrument is unreliable on this machine: while connected, this
@@ -216,14 +220,37 @@ try {
     # Both are wanted, and serial works with or without a network.
     if (Test-Path $Espino) {
         $monitor = Start-Process -FilePath $Espino `
-            -ArgumentList @("monitor", "--port", $SerialPort, "--board", $Board, "--no-reset", "--timeout", "$($Seconds * 3 + 150)") `
+            -ArgumentList @("monitor", "--port", $SerialPort, "--board", $Board, "--timeout", "$($Seconds * 3 + 150)") `
             -RedirectStandardOutput "v1-serial.txt" -RedirectStandardError "v1-serial.err.txt" `
             -PassThru -WindowStyle Hidden
-        Say "watching the board on $SerialPort (no reset, so the stream is not interrupted)"
+        Say "watching the board on $SerialPort (reset first: nobody is connected yet, and the banner proves it is hosting)"
+        Start-Sleep -Seconds 3
     }
 
     Say "joining '$ApSsid' -- the session driving this is now out of contact"
-    netsh wlan connect name="$ApSsid" ssid="$ApSsid" interface="$iface" | Out-Null
+    netsh wlan disconnect interface="$iface" 2>&1 | Out-Null
+    $landed = ""
+    $assoc = $false
+    foreach ($attempt in 1..6) {
+        Start-Sleep -Seconds 6        # let the adapter scan after the disconnect
+        netsh wlan connect name="$ApSsid" ssid="$ApSsid" interface="$iface" 2>&1 | Out-Null
+        Start-Sleep -Seconds 5
+        $ifc = netsh wlan show interfaces | Out-String
+        $landed = [regex]::Match($ifc, '(?m)^\s*SSID\s*:\s*(.+?)\s*$').Groups[1].Value
+        $state = [regex]::Match($ifc, '(?m)^\s*State\s*:\s*(.+?)\s*$').Groups[1].Value
+        if ($landed -eq $ApSsid -and $state -match 'connected') { $assoc = $true; break }
+        Say "attempt $attempt`: on '$landed' ($state), not '$ApSsid' -- retrying"
+    }
+    Step "associated" $assoc $(if ($assoc) { "on '$ApSsid' after $attempt attempt(s)" } else { "landed on '$landed' -- the adapter never found '$ApSsid'; Windows fell back" })
+    if (-not $assoc) {
+        Record (netsh wlan show interfaces | Out-String)
+        Record (netsh wlan show networks mode=bssid | Out-String)
+        throw "never associated with $ApSsid (on '$landed' instead)"
+    }
+    # What the link actually is, while we are on it: radio type, channel,
+    # signal. The next failure should explain itself from this file alone.
+    Record "== link, as Windows sees it =="
+    Record ((netsh wlan show interfaces | Out-String) -split "`n" | Where-Object { $_ -match 'SSID|State|Radio type|Channel|Signal|Band|Authentication' } | Out-String)
 
     $joined = Wait-Until {
         Test-NetConnection -ComputerName $BoardIp -Port 80 -InformationLevel Quiet -WarningAction SilentlyContinue
@@ -235,8 +262,10 @@ try {
     }
 
     $addr = (Get-NetIPAddress -InterfaceAlias $iface -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Select-Object -First 1).IPAddress
+        ForEach-Object IPAddress) -join ", "
     $R.laptop_ip = $addr
+    Record "== addresses on the interface =="
+    Record ((ipconfig /all | Out-String) -split "`n" | Where-Object { $_ -match 'IPv4|DHCP Server|Lease|Default Gateway|Subnet' } | Out-String)
     Record "laptop address on the board's network: $addr"
 
     $ping = Test-Connection -ComputerName $BoardIp -Count 10 -ErrorAction SilentlyContinue

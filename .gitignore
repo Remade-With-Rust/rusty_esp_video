@@ -20,3 +20,8 @@ firmware/*/v1-results.*
 firmware/*/v1-serial*.txt
 firmware/*/v1-preflight-serial.txt
 firmware/*/v1-raw.mjpeg
+
+# What an offline trip writes where it is run: results, serial and boot
+# captures, receiver stderr. Evidence for a ledger row, not files to track.
+c1-*.txt
+c1-*.json

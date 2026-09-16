@@ -25,3 +25,5 @@ firmware/*/v1-raw.mjpeg
 # captures, receiver stderr. Evidence for a ledger row, not files to track.
 c1-*.txt
 c1-*.json
+c1-*.raw
+v1-*.txt

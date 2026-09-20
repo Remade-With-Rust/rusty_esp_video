@@ -148,3 +148,7 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
+
+[[patch.unused]]
+name = "rusty_esp_alloc"
+version = "0.1.0"

@@ -34,19 +34,28 @@ checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
 name = "rusty_esp_core"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "rusty_esp_dsp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libm",
  "rusty_esp_core",
 ]
 
 [[package]]
+name = "rusty_esp_dsp-esp"
+version = "0.1.1"
+dependencies = [
+ "libm",
+ "rusty_esp_core",
+ "rusty_esp_dsp",
+]
+
+[[package]]
 name = "rusty_esp_image-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "embedded-hal",
  "rusty_esp_core",
@@ -56,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusty_esp_video-core",
  "rusty_esp_video-esp",
@@ -64,9 +73,10 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusty_esp_core",
+ "rusty_esp_dsp-esp",
  "rusty_esp_image-core",
  "rusty_h264",
  "rusty_jpeg",
@@ -74,7 +84,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video-esp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusty_esp_core",
  "rusty_esp_image-core",
@@ -151,4 +161,4 @@ dependencies = [
 
 [[patch.unused]]
 name = "rusty_esp_alloc"
-version = "0.1.0"
+version = "0.1.1"

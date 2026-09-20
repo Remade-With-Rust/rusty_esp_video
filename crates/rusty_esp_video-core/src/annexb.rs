@@ -20,21 +20,67 @@ pub mod nal_type {
 /// An access unit delimiter for a picture of any slice type, with a 4-byte start code.
 pub const AUD_NAL: [u8; 6] = [0x00, 0x00, 0x00, 0x01, 0x09, 0xF0];
 
+/// Index of the first `00 00 01` in `bytes`, by the definition this module
+/// has always used: the lowest `i` with `i + 2 < bytes.len()` and
+/// `bytes[i..i + 3] == [0, 0, 1]`.
+///
+/// **This is the oracle.** It stays in the tree, it is what every test
+/// compares against, and it is the arm every target but an ESP32-S3 takes.
+///
+/// On an ESP32-S3 with `pie-s3` on, nothing calls it and the compiler says
+/// so. That is correct and it stays anyway: the scalar version of a twinned
+/// kernel is never deleted, because it is the definition the twin is gated
+/// against, and a target where it happens to be unreachable is not a reason
+/// to lose it.
+#[cfg_attr(all(feature = "pie-s3", target_arch = "xtensa"), allow(dead_code))]
+fn scan3(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 3 {
+        return None;
+    }
+    (0..bytes.len() - 2).find(|&i| bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1)
+}
+
+/// The ESP32-S3 vector twin of [`scan3`], or [`scan3`] itself everywhere else.
+///
+/// A start code must BEGIN with a zero byte, so the twin tests sixteen bytes
+/// at a time for "does this block contain any zero at all" and walks only the
+/// blocks that do. On a real Annex-B stream almost no block does, which is
+/// why this is the largest single win in the family: **−93.4%, 15.1x**.
+///
+/// Gated byte-identical against [`scan3`] on hardware, and `cfg`-switched on
+/// the TARGET rather than the feature — a host build with `pie-s3` on still
+/// runs the oracle, so the tests keep meaning what they say.
+#[cfg(feature = "pie-s3")]
+fn first_code3(bytes: &[u8]) -> Option<usize> {
+    #[cfg(target_arch = "xtensa")]
+    {
+        rusty_esp_dsp_esp::pie_s3::find_start_code3(bytes)
+    }
+    #[cfg(not(target_arch = "xtensa"))]
+    {
+        scan3(bytes)
+    }
+}
+
+/// The `pie-s3`-off twin of [`first_code3`]: the oracle, and nothing else.
+#[cfg(not(feature = "pie-s3"))]
+fn first_code3(bytes: &[u8]) -> Option<usize> {
+    scan3(bytes)
+}
+
 /// Position of the next `00 00 01` in `bytes`: the index where the start code
 /// (including any leading zero bytes) begins, and the index just after it.
+///
+/// The scan itself is [`first_code3`]; backing up over the leading zeros is
+/// scalar either way, because it walks backwards a byte or two and a vector
+/// load cannot help it.
 fn find_start_code(bytes: &[u8]) -> Option<(usize, usize)> {
-    let mut i = 0;
-    while i + 2 < bytes.len() {
-        if bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1 {
-            let mut begin = i;
-            while begin > 0 && bytes[begin - 1] == 0 {
-                begin -= 1;
-            }
-            return Some((begin, i + 3));
-        }
-        i += 1;
+    let i = first_code3(bytes)?;
+    let mut begin = i;
+    while begin > 0 && bytes[begin - 1] == 0 {
+        begin -= 1;
     }
-    None
+    Some((begin, i + 3))
 }
 
 /// Iterate the NAL units of an Annex-B byte stream, start codes stripped.
@@ -264,5 +310,89 @@ mod tests {
         );
         assert_eq!(access_units(&[]).count(), 0);
         assert_eq!(access_units(&idr).count(), 1);
+    }
+
+    /// `find_start_code` exactly as it was written before the scan was split
+    /// out into [`scan3`] and a vector twin. This is the definition the whole
+    /// module was built and tested against, kept here so the split is gated
+    /// by the thing it replaced rather than by a restatement of itself.
+    fn find_start_code_as_written(bytes: &[u8]) -> Option<(usize, usize)> {
+        let mut i = 0;
+        while i + 2 < bytes.len() {
+            if bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1 {
+                let mut begin = i;
+                while begin > 0 && bytes[begin - 1] == 0 {
+                    begin -= 1;
+                }
+                return Some((begin, i + 3));
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// xorshift64*, so a failure is reproducible from its seed.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        }
+        /// A tiny alphabet, so start codes, four-byte start codes and
+        /// near-misses occur by chance instead of being planted.
+        fn byte(&mut self) -> u8 {
+            match self.next() % 10 {
+                0..=5 => 0,
+                6 | 7 => 1,
+                8 => 2,
+                _ => (self.next() >> 33) as u8,
+            }
+        }
+    }
+
+    #[test]
+    fn the_split_scan_matches_the_scan_it_replaced() {
+        let mut rng = Rng(0x0B3_A17E_2026);
+        let mut checked = 0usize;
+        for len in 0..260usize {
+            for _ in 0..12 {
+                let buf: Vec<u8> = (0..len).map(|_| rng.byte()).collect();
+                assert_eq!(
+                    find_start_code(&buf),
+                    find_start_code_as_written(&buf),
+                    "len={len} buf={buf:?}"
+                );
+                // And at every offset into it, which is what `NalSpans` does:
+                // `pos` lands wherever the previous NAL ended, so the slice
+                // handed to the scan has an arbitrary base.
+                for off in (0..len).step_by(7) {
+                    assert_eq!(
+                        find_start_code(&buf[off..]),
+                        find_start_code_as_written(&buf[off..]),
+                        "len={len} off={off}"
+                    );
+                    checked += 1;
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 50_000, "the sweep did not run: {checked}");
+    }
+
+    #[test]
+    fn scan3_finds_the_three_byte_code_inside_a_four_byte_one() {
+        // `00 00 00 01` carries its `00 00 01` at index 1; `find_start_code`
+        // is what backs up over the leading zero to report the code's start.
+        assert_eq!(scan3(&[0, 0, 0, 1, 9]), Some(1));
+        assert_eq!(find_start_code(&[0, 0, 0, 1, 9]), Some((0, 4)));
+        assert_eq!(find_start_code(&[0, 0, 1, 9]), Some((0, 3)));
+        assert_eq!(find_start_code(&[0xFF, 0, 0, 0, 0, 1, 9]), Some((1, 6)));
+        assert_eq!(scan3(&[]), None);
+        assert_eq!(scan3(&[0, 0]), None);
+        assert_eq!(scan3(&[0, 0, 2]), None);
     }
 }

@@ -7,7 +7,7 @@ members = ["crates/*"]
 exclude = ["firmware/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Remade-With-Rust/rusty_esp_video"
@@ -25,14 +25,15 @@ undocumented_unsafe_blocks = "deny"
 [workspace.dependencies]
 # Internal crates carry BOTH path and version so the set publishes to crates.io
 # in lockstep (the rusty_time pattern).
-rusty_esp_video-core = { path = "crates/rusty_esp_video-core", version = "0.1.0", default-features = false }
-rusty_esp_video-esp = { path = "crates/rusty_esp_video-esp", version = "0.1.0", default-features = false }
+rusty_esp_video-core = { path = "crates/rusty_esp_video-core", version = "0.1.1", default-features = false }
+rusty_esp_video-esp = { path = "crates/rusty_esp_video-esp", version = "0.1.1", default-features = false }
 
 # Siblings in the Janus family are consumed BY GIT URL so this repo deploys on
 # its own. Inside the Janus umbrella folder, `.cargo/config.toml` patches the
 # URL to the sibling checkout, so local edits are visible without a push.
 rusty_esp_core = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_core", default-features = false }
 rusty_esp_image-core = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_image", default-features = false }
+rusty_esp_dsp-esp = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_dsp", default-features = false }
 
 [profile.release]
 lto = "thin"

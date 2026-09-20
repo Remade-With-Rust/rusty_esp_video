@@ -27,6 +27,11 @@ h264 = ["alloc", "dep:rusty_h264", "rusty_h264/libm"]
 # The software JPEG encoder behind `VideoEncoder` (`jpeg::SoftJpeg`) through
 # the image package: rusty_jpeg 0.4, no_std + alloc.
 jpeg = ["alloc", "rusty_esp_image-core/jpeg"]
+# Run the ESP32-S3 PIE twin of the Annex-B start-code scan. Correctness is
+# unchanged: the twin is gated byte-identical against `annexb::scan3`, which
+# stays in the tree as the oracle, and off-chip the twin IS that scalar -- so
+# this feature is safe to leave on in a host build or a host test.
+pie-s3 = ["dep:rusty_esp_dsp-esp", "rusty_esp_dsp-esp/pie-s3"]
 
 [dependencies]
 rusty_esp_core = { workspace = true }
@@ -34,6 +39,9 @@ rusty_esp_core = { workspace = true }
 rusty_esp_image-core = { workspace = true }
 # Default features OFF: no allocator hijack, no SIMD, the portable scalar codec.
 rusty_h264 = { version = "0.14", default-features = false, optional = true }
+# The ESP32-S3 vector twins, for `annexb`'s start-code scan. Optional and
+# off by default: only a firmware that wants them asks.
+rusty_esp_dsp-esp = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Oracles. rusty_h264 with default features OFF: no allocator hijack, the

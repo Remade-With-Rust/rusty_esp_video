@@ -20,7 +20,7 @@ default = ["std"]
 # adds the `Vec<u8>` sink and the test/host-side TS demuxer.
 std = ["alloc", "rusty_esp_core/std", "rusty_esp_image-core/std", "rusty_h264?/std"]
 alloc = ["rusty_esp_core/alloc", "rusty_esp_image-core/alloc"]
-# The J5 encoder: `rusty_h264` 0.14 Constrained Baseline behind `VideoEncoder`:
+# The J5 encoder: `rusty_h264` 0.16 Constrained Baseline behind `VideoEncoder`:
 # `alloc` is enough, `libm` carries the float math on a chip (and makes host
 # and chip decisions bit-identical when `std` has it too).
 h264 = ["alloc", "dep:rusty_h264", "rusty_h264/libm"]
@@ -33,7 +33,7 @@ rusty_esp_core = { workspace = true }
 # The one planned Layer-1 edge: a VideoSource is an ImageSource plus an encoder.
 rusty_esp_image-core = { workspace = true }
 # Default features OFF: no allocator hijack, no SIMD, the portable scalar codec.
-rusty_h264 = { version = "0.14", default-features = false, optional = true }
+rusty_h264 = { version = "0.16.0", default-features = false, optional = true }
 
 [dev-dependencies]
 # Oracles. rusty_h264 with default features OFF: no allocator hijack, the
@@ -42,7 +42,7 @@ rusty_h264 = { version = "0.14", default-features = false, optional = true }
 # No `std` here: the `std` feature of this crate turns it on through
 # `rusty_h264?/std`, and a dev-dependency feature would leak into the
 # bare-metal check of the library.
-rusty_h264 = { version = "0.14", default-features = false }
+rusty_h264 = { version = "0.16.0", default-features = false }
 rusty_jpeg = { version = "0.4", default-features = false, features = ["std"] }
 
 [lints]

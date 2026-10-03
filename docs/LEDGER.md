@@ -417,3 +417,273 @@ last ~50 s were dark. No later packet existed to expose that as a gap, which
 is why the sequence method reads 1 lost while the rate method reads a 3.9 %
 deficit: the deficit is the dark tail, and the single packet is the loss.
 Both are reported; the loss figure is over the ~550 s associated.
+
+## X0 of the killing-C plan: the C census — 2026-09-30
+
+`python tools/c-census.py build && python tools/c-census.py report --ledger` from the umbrella, so sibling crates are the checkouts beside this one: each firmware is linked `--release` with a linker map and `--emit-relocs`, and the two are read together. Every input section the linker kept is charged to the archive the map names for it, one owner per address; every FUNC and OBJECT symbol in the ELF to the archive whose section holds its address; and a mask-ROM routine counts when a kept relocation names it (a linker script defines every ROM symbol whether or not anything calls it). `image B` is code + data as flashed; bss is RAM only. `tools/c-census.py verify` is the gate: the bytes charged equal the bytes the ELF loads, and every symbol charged to a C archive is one `llvm-nm` finds defined in that archive; on an ESP-IDF build the image bytes of every archive also equal what Espressif's own `esp_idf_size` reports from the same map. Two limits: a string table the linker merged is shared by everything that contributed to it, so it is charged where the map puts it (GNU ld) or to the linker row (lld, which names no contributor); and with LTO the Rust side is one object, so its crates are not told apart. Where a firmware reads its network at compile time the build is given placeholders for all of it (`census` / `census-pass`, stream destinations in 192.0.2.0/24): a firmware given no destination compiles its networking out, and the census would measure an image nobody ships.
+
+**What it says.** 69.2% of the camera page's image is C:
+452,689 B of ESP-IDF built from source, 229,737 B of radio blob,
+62,369 B of the toolchain's C runtime. Leaving ESP-IDF removes 515,058 B and 5,120 symbols; the blob
+(1,305 symbols) is what a Track B twin would still carry, in whatever
+quantity `esp-radio` links on the S3. The rows of the killing-C plan, sized:
+lwIP 82,599 B (X2), `esp32-camera` 60,236 B
+and 578 symbols (X5), mbedTLS's crypto library
+56,745 B — no TLS or X.509 code is kept, and it is absent from the one
+image that starts no radio — `wpa_supplicant` 54,770 B, FreeRTOS 19,265 B,
+NVS 13,058 B (X4).
+
+### `xiao-s3-sense-idf-mjpeg` — S3, Track A, `main@86e8be9`
+
+| origin | objects | symbols | code B | data B | bss B |
+|---|---:|---:|---:|---:|---:|
+| Rust | 1 | 743 | 218,841 | 103,181 | 118 |
+| ESP-IDF, built from C source | 43 | 4,922 | 395,495 | 57,194 | 9,753 |
+| precompiled Espressif archives (the blob) | 5 | 1,305 | 207,836 | 21,901 | 8,919 |
+| toolchain C runtime (libc, libgcc) | 2 | 198 | 57,653 | 4,716 | 337 |
+| linker (merged constants, padding, reservations) | 1 | 0 | 8,690 | 444 | 74,646 |
+
+**C in this image: 6,425 symbols, 744,795 B of 1,075,951 B (69.2%). The blob floor is 1,305 symbols in 5 archives.** The 2nd-stage bootloader that starts it is espflash 4.6.0's bundled `esp32s3-bootloader.bin`: 21,072 B of C outside this image.
+
+Mask-ROM routines called: 267 — 267 from C, 8 from Rust: `__divsf3`, `__floatundisf`, `__udivdi3`, `memcmp`, `memcpy`, `memmove`, `memset`, `strlen`.
+
+| C archive | origin | symbols | image B | bss B |
+|---|---|---:|---:|---:|
+| `libnet80211.a` | blob | 633 | 133,339 | 7,590 |
+| `lwip` | idf | 781 | 82,599 | 3,721 |
+| `libpp.a` | blob | 487 | 62,626 | 1,234 |
+| `libc.a` | toolchain | 143 | 60,881 | 320 |
+| `espressif__esp32-camera` | idf | 578 | 60,236 | 2,161 |
+| `mbedtls` | idf | 608 | 56,745 | 252 |
+| `wpa_supplicant` | idf | 457 | 54,770 | 1,330 |
+| `libphy.a` | blob | 179 | 33,486 | 86 |
+| `esp_hw_support` | idf | 305 | 28,666 | 247 |
+| `hal` | idf | 172 | 19,350 | 4 |
+| `freertos` | idf | 210 | 19,265 | 757 |
+| `spi_flash` | idf | 225 | 14,341 | 24 |
+| `esp_system` | idf | 195 | 13,920 | 309 |
+| `nvs_flash` | idf | 151 | 13,058 | 24 |
+| `esp_driver_i2c` | idf | 51 | 10,829 | 28 |
+| `libcore.a` | blob | 5 | 283 | 9 |
+| `libespnow.a` | blob | 1 | 3 | 0 |
+| … 33 smaller | | 1,244 | 80,398 | 913 |
+
+## X2 of the killing-C plan: the page's HTTP with no socket in it, and the page on Track B — built, not yet joined (2026-09-30)
+
+### The protocol, out of the transport
+
+`rusty_esp_video-core::http` (5 host tests): the request line and the gate
+(`parse_request`, `head_complete`), the page (`INDEX_HTML`, `write_index`
+with the token cookie when gated) and every refusal (`write_status`: 400,
+403, 404, 405, and a 503 for a chip with no camera to stream), all over
+`PacketSink` and allocation-free. The `std` server in
+`rusty_esp_video-esp::net` now keeps only its I/O — the listener, the read
+loop, the TCP sink — and its oracle tests pass unchanged: index, stream,
+404, 405, the gate's 403, the cookie the page sets. This is the video half of
+the plan's transport seam; a Track B firmware formats a response into a
+`SliceSink` and sends the slice over its async socket.
+
+### The page firmware
+
+`firmware/xiao-s3-sense-hal-page`: the camera page served over esp-radio's
+station and embassy-net's TCP through `rusty_esp_signal-esp::hal::netstack`,
+one connection at a time, with `GET /stream` an honest `503` until row X5
+brings the camera driver to Track B. Census (`verify` closes, `llvm-nm`
+agrees): **473,291 B image, 320,614 B of C (67.7 %) — the radio blob in 8
+archives and 6 B of `crti.o`** — against 1,075,951 B and 744,795 B for the
+ESP-IDF camera page (which has a camera).
+
+### Not yet joined
+
+Built with placeholder credentials; not run. No 2.4 GHz network was
+reachable from the bench, and the passphrase is the operator's to type. The
+kill test — `http://<ip>/` served from this firmware, the join time next to
+Track A's — is the README's run.
+
+## X5 of the killing-C plan: `/stream` on Track B — the kill test's second half passed on the XIAO (2026-09-30)
+
+The page firmware with the camera in it, streaming to ffmpeg at the
+sensor's own rate over a network the board hosts, with no ESP-IDF, no
+esp32-camera and no lwIP in the image. The first half — the driver's
+byte-identical colour bars against the C driver — is in `rusty_esp_image`'s
+ledger.
+
+### The firmware
+
+`firmware/xiao-s3-sense-hal-page` now drives the sensor from
+`rusty_esp_image_core::driver` and grabs frames from
+`rusty_esp_image_esp::hal::DvpCamera` (LCD_CAM and GDMA into a 64 KB ring,
+JPEG straight from the sensor, a two-slot PSRAM pool). `GET /stream` writes
+the multipart head and then, per frame, `Multipart::push` into a PSRAM part
+buffer and `write_all` to the socket; between frames it polls
+`frame_ready()` and sleeps a millisecond, so the stack runs meanwhile. It
+prints `PAGE streaming …` every hundred frames and, when the viewer leaves,
+`PAGE stream frames=… fps_milli=… restarts=… timeouts=…`.
+
+And it hosts: `JANUS_AP_PASS` (with `JANUS_AP_SSID`, default `janus-cam`)
+compiles in the access point instead of the station — WPA2, 192.168.71.1,
+leases from `.50`, the DHCP server from `rusty_esp_signal-esp::hal::netstack`
+(its ledger has that half) — the arrangement V1 was measured in, so the two
+rows are measured the same way. A build with neither set fails at compile
+time and says so.
+
+### The measurement
+
+`tools/x5-stream-offline.ps1` (umbrella), the V1 runner's shape: the laptop
+has one radio, so the run saves its network, adds a profile with the
+passphrase from V1's gitignored file (deleted afterwards, never printed),
+joins `janus-cam`, gates on port 80, pings ten times, fetches the page,
+probes and decodes `/stream` for 60 s of stream time, copies 10 s of it for
+the byte count, and comes back, while espino's monitor keeps the board's
+serial. `x5-results.txt` / `x5-results.json` beside the firmware.
+
+Method line: `board=xiao-esp32s3-sense radio=softap-wpa2-ch1 client=802.11n-95%
+geometry=320x240 format=mjpeg fps_cap=none oracle=ffmpeg-8.1.2-decode+ffprobe
+metric=decoded-frames/stopwatch arms=1 stream_secs=60 self_metric=board-serial
+rtt=1/9.1/60ms`.
+
+| | this firmware, Track B | V1, the ESP-IDF twin (2026-09-11) |
+|---|---:|---:|
+| ffmpeg decoded frames | 1,500 in 55.5 s | 1,500 in 108.6 s |
+| **fps** | **27.04** | 13.81 (a 15 fps cap against a 27.5 fps sensor) |
+| the board's own count | 1,504 sent at 27.60 fps | 1,502 sent, 1,478 dropped at the cap |
+| bytes over the link, 10 s | 1,107,291 (108.1 KiB/s, 0.89 Mbit/s) | 62.2 KiB/s |
+| ping RTT min / mean / max | 1 / 9.1 / 60 ms | 2 / 3 / 7 ms |
+| link | 802.11n ch 1, 95 %, 150 / 135 Mbps | 802.11n ch 1, 98 % |
+| lease | 192.168.71.50 from the board | 192.168.71.2 from the board |
+
+**The stream runs at the sensor's rate.** ffmpeg's 27.04 fps against the
+board's 27.60 is the stopwatch's share of the join and the first frame; the
+sensor makes 27.8 (I1, and X5's first half). Nothing in the path caps or
+stalls: the ring engine grabs, the stack sends, and the one `restart` in
+54 s was the ring filling behind a slow send — the counter the engine keeps
+for exactly that. V1's finding was that its rate was cap-limited, not
+link-limited, and that the next fps would come from the cap; this firmware
+has no cap and delivers twice V1's frames per second at 1.7 × its bytes per
+second, on a link with an order of magnitude left. The plan's row named
+V1's number as 9.2–10; the V1 ledger row is 13.8, and that is the bar this
+clears.
+
+X2's page half is met by the same run — `GET /` answered 200 from this
+firmware before the stream — with the board hosting the network rather
+than joining one; `join_ms=949` is the access point up, not a join.
+
+### The census, re-run on this firmware
+
+### `xiao-s3-sense-hal-page` — S3, Track B, `main@86e8be9`
+
+| origin | objects | symbols | code B | data B | bss B |
+|---|---:|---:|---:|---:|---:|
+| Rust | 2 | 910 | 150,227 | 50,753 | 213,424 |
+| precompiled Espressif archives (the blob) | 8 | 1,710 | 276,044 | 44,540 | 10,920 |
+| toolchain C runtime (libc, libgcc) | 1 | 2 | 6 | 0 | 0 |
+| linker (merged constants, padding, reservations) | 1 | 0 | 3,998 | 211 | 101,040 |
+
+**C in this image: 1,712 symbols, 320,590 B of 525,779 B (61.0%). The blob floor is 1,710 symbols in 8 archives.** The 2nd-stage bootloader that starts it is espflash 4.6.0's bundled `esp32s3-bootloader.bin`: 21,072 B of C outside this image.
+
+Mask-ROM routines called: 196 — 173 from C, 29 from Rust: `Cache_Invalidate_Addr`, `Cache_Resume_DCache`, `Cache_Resume_DCache_Autoload`, `Cache_Suspend_DCache`, `Cache_Suspend_DCache_Autoload`, `__divdi3`, `cache_dbus_mmu_set`, `esp_rom_efuse_get_flash_gpio_info`, `esp_rom_efuse_get_flash_wp_gpio`, `esp_rom_opiflash_exec_cmd`, `esp_rom_opiflash_pin_config`, `esp_rom_regi2c_read`, `esp_rom_spi_cmd_config`, `esp_rom_spi_cmd_start`, `esp_rom_spi_set_dtr_swap_mode`, `esp_rom_spi_set_op_mode`, `esp_rom_spiflash_select_qio_pins`, `ets_delay_us`, `ets_update_cpu_frequency`, `intr_matrix_set`, `memcmp`, `memcpy`, `memmove`, `memset`, `rom_Cache_WriteBack_Addr`, `rom_config_data_cache_mode`, `rom_config_instruction_cache_mode`, `rom_i2c_writeReg`, `rtc_get_reset_reason`.
+
+| C archive | origin | symbols | image B | bss B |
+|---|---|---:|---:|---:|
+| `libnet80211.a` | blob | 687 | 169,861 | 8,027 |
+| `libpp.a` | blob | 509 | 66,954 | 1,364 |
+| `libwpa_supplicant.a` | blob | 301 | 42,754 | 1,483 |
+| `libphy.a` | blob | 179 | 32,840 | 46 |
+| `libprintf.a` | blob | 17 | 4,782 | 0 |
+| `libbtbb.a` | blob | 14 | 2,638 | 0 |
+| `libregulatory.a` | blob | 2 | 752 | 0 |
+| `crti.o` | toolchain | 2 | 6 | 0 |
+| `libespnow.a` | blob | 1 | 3 | 0 |
+
+The ESP-IDF camera page is 1,075,951 B with 744,795 B of C (69.2 %) in
+6,425 symbols; this one, with the same camera and the same page, is
+525,779 B with 320,590 B of C in 1,712 symbols — the radio blob's 1,710 and
+`crti.o`'s 2. `esp32-camera` (60,284 B / 578), lwIP, `esp_netif`, NVS,
+FreeRTOS and the rest of ESP-IDF are gone from the table. The census
+builds with the station placeholders (`census` / `census-pass`), so the
+access-point branch and the DHCP server are compiled out of the measured
+image; the hosted build the stream was measured on is 946,860 B on disk as
+an ELF and carries them.
+
+### X7 addendum: `PUT /update` in the page protocol (2026-09-30, night)
+
+`http` learnt one more request: `PUT /update`, `Request::Put` with the
+body's announced length, gated like a `GET` (the device's own token on the
+query string or the cookie); `body_offset` finds where a body begins in a
+head buffer that already holds some of it, and `write_plain` answers in
+one line (`committed <sha256>`, or the refusal's name). Host-tested with
+the rest. The page firmware under X5 does not take it; the generated Track
+B cell with a maker does, and that is where the update's bytes are read,
+verified and written (iroh and espino ledgers).
+
+## X11 note: the station page firmware compiles again (2026-10-01)
+
+`firmware/xiao-s3-sense-hal-page` stopped compiling when X7 gave
+`http::Request` a `Put` variant (the generated cells' `/update`): its
+request `match` did not cover it. The page takes no update, so a `PUT` is
+answered `405` like any other method it does not serve. Found by X11's
+census build; on the XIAO it boots to `PAGE sensor=` with the census's
+placeholder network and no C of ours in the image.
+
+## The optimization campaign after X11: the request head 2.6× cheaper (2026-10-01)
+
+- W7: the blank line is found by its `\n` and the three bytes before it;
+  the window search it replaced (`windows(4)` against `\r\n\r\n`) called
+  `memcmp` once per byte position, about 1,350 times a request. Oracle:
+  the window search on 3,200 random heads.
+- W8: `http::head_complete_from(head, seen)` searches only what a read
+  added (and the three bytes before it); the station page firmware's loop
+  and espino's Track B template use it.
+- W9: a header is split and trimmed only when its first byte could begin
+  the name after trimming (the name's first letter in either case, or the
+  first byte of a Unicode `White_Space` character). Oracle: the full scan
+  on 4,000 heads with names padded by every kind of space.
+- W11: newlines are found eight bytes at a time (`b ^ 0x0A` is zero
+  exactly for `\n`).
+- Refuted: an ASCII split of the request line (1.4 % of a request).
+
+On the XIAO's probe at 80 MHz, a 400-byte GET with a cookie in three
+reads, checked and parsed with the gate: 409.0 → 158.5 µs. Numbers and
+method: rusty_esp_dsp's ledger.
+
+## Round 2: the request head (2026-10-01)
+
+- **H1**: the `Cookie` header is read only when the query string carries no
+  token (`Gate::admits_with`), and an ASCII request line is split on ASCII
+  whitespace (the same tokens; a Unicode space outside ASCII is never in an
+  ASCII line). Pinned by a test against the old parser on 5,400 heads.
+- **R12**: with `pie-s3`, newlines are found sixteen bytes a test
+  (`find_byte`).
+- **R13**: with `pie-s3`, the blank line is found as the one `\n\r` pair
+  in the head (`find_pair`), not by stopping at every newline; fuzzed on
+  the chip against the portable search, 3,000 of 3,000.
+
+| XIAO at 80 MHz, `http_head` (three reads, then the parse with the gate) | us |
+|---|---:|
+| round 1's end | 158.4 |
+| H1 | 105.4 |
+| R12 | 92.0 |
+| R13 | **70.5** |
+
+dsp's ledger, "Round 2", has the method, every run and the refuted shapes.
+
+## Round 3: the page token read on bytes (2026-10-01)
+
+**B3.** `mjpeg_http::query_param` walks the query string's bytes for
+`name=` at a parameter start and stops at `&`, with no `split` iterators;
+`query_param_split` (the old code) is its oracle in a host test over more
+than 50,000 generated query strings (Unicode, empty pieces, repeated and
+look-alike names).
+
+| XIAO, 80 MHz | before | after |
+|---|---:|---:|
+| `http_gate` (a request's token check) | 14.2 us | **11.0 us** |
+
+**B11.** The page firmware's SCCB bus at 400 kHz (the camera's configure
+305 -> 235 ms on the capture firmware; image's ledger).
+
+**The Track A server answers 405 to `/update` (2026-10-02, enc-ble M7).**
+killing-C's signed updates gave `http::Request` a `Put` and `Path` an
+`Update`; `rusty_esp_video-esp`'s std server (`net.rs`) matched neither and no
+Track A cell compiled. It serves only GETs, and a Track A cell takes its
+updates elsewhere, so both are `405 Method Not Allowed`. Found building C6.

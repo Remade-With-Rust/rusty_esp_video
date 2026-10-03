@@ -2,8 +2,10 @@
 //!
 //! Wi-Fi on an ESP32 cannot carry every frame a sensor produces at every
 //! size; a stream needs a policy for which frames to drop, and a counter that
-//! says how many it dropped. [`Pacer`] admits a frame when at least one
-//! interval has elapsed since the last admitted one; [`Budget`] admits a
+//! says how many it dropped. [`Pacer`] holds the frame rate to a cap,
+//! optionally letting a burst through early (a sensor that sends its
+//! pictures in bursts, as the OV3660 does, loses half of them to a pacer
+//! that only spaces frames); [`Budget`] admits a
 //! frame when its bytes fit the bit-rate cap. Both drop a frame whole, never
 //! blocking and never sending part of one: a receiver sees complete frames
 //! at a lower rate, not corrupt frames at the sensor's rate.
@@ -11,10 +13,19 @@
 use rusty_esp_core::time::Micros;
 
 /// Admits at most `fps` frames per second.
+///
+/// The rule is the generic cell rate algorithm: each admitted frame moves a
+/// due time one interval on, and a frame is admitted when it arrives no
+/// earlier than `burst` intervals before its due time. With `burst` 0
+/// ([`Pacer::new`]) that is one interval between admitted frames, exactly;
+/// with `burst` k, up to k + 1 frames may pass back to back, and over any
+/// stretch at most `fps` per second plus those k are admitted.
 #[derive(Debug, Clone)]
 pub struct Pacer {
     interval_micros: u64,
-    last: Option<Micros>,
+    tolerance_micros: u64,
+    /// When the next frame is due at the capped rate.
+    due: Option<u64>,
     /// Frames admitted.
     pub admitted: u64,
     /// Frames dropped.
@@ -22,16 +33,27 @@ pub struct Pacer {
 }
 
 impl Pacer {
-    /// A pacer capping at `fps`; 0 admits everything.
+    /// A pacer capping at `fps`, one interval between admitted frames; 0
+    /// admits everything.
     #[must_use]
     pub fn new(fps: u32) -> Self {
+        Self::with_burst(fps, 0)
+    }
+
+    /// A pacer capping the rate at `fps` that lets up to `burst` frames
+    /// through ahead of their due time: a burst from the sensor is kept, and
+    /// the long-run rate is still the cap. 0 `fps` admits everything.
+    #[must_use]
+    pub fn with_burst(fps: u32, burst: u32) -> Self {
+        let interval_micros = if fps == 0 {
+            0
+        } else {
+            1_000_000 / u64::from(fps)
+        };
         Pacer {
-            interval_micros: if fps == 0 {
-                0
-            } else {
-                1_000_000 / u64::from(fps)
-            },
-            last: None,
+            interval_micros,
+            tolerance_micros: interval_micros * u64::from(burst),
+            due: None,
             admitted: 0,
             dropped: 0,
         }
@@ -39,12 +61,16 @@ impl Pacer {
 
     /// Should a frame captured at `now` be sent?
     pub fn admit(&mut self, now: Micros) -> bool {
-        let ok = match self.last {
-            None => true,
-            Some(last) => now.since(last) >= self.interval_micros,
-        };
+        let t = now.0;
+        let ok = self.interval_micros == 0
+            || self
+                .due
+                .is_none_or(|due| t.saturating_add(self.tolerance_micros) >= due);
         if ok {
-            self.last = Some(now);
+            if self.interval_micros != 0 {
+                let from = self.due.map_or(t, |due| due.max(t));
+                self.due = Some(from.saturating_add(self.interval_micros));
+            }
             self.admitted += 1;
         } else {
             self.dropped += 1;
@@ -52,9 +78,9 @@ impl Pacer {
         ok
     }
 
-    /// Forget the last admitted frame (after a stream restart).
+    /// Forget the frames admitted so far (after a stream restart).
     pub fn reset(&mut self) {
-        self.last = None;
+        self.due = None;
     }
 }
 
@@ -192,5 +218,57 @@ mod tests {
         assert_eq!((p.admitted, p.dropped), (25, 75));
         let mut all = Pacer::new(0);
         assert!(all.admit(Micros::ZERO) && all.admit(Micros::ZERO));
+    }
+
+    /// The OV3660's shape: the pictures of one 180 ms output window arrive
+    /// back to back, 36 ms of sensor time apart but a few ms apart on the
+    /// wire. Spacing alone keeps one or two a window; a burst allowance
+    /// keeps the cap's rate.
+    #[test]
+    fn a_burst_allowance_keeps_a_bursty_sensor_at_the_cap() {
+        // 5 pictures every 180 ms, 4 ms apart: 27.8 fps in bursts
+        let arrivals: Vec<u64> = (0..200u64).map(|i| (i / 5) * 180 + (i % 5) * 4).collect();
+        let span_ms = arrivals[arrivals.len() - 1] - arrivals[0];
+        let run = |mut p: Pacer| {
+            let n = arrivals.iter().filter(|&&ms| p.admit(Micros::from_millis(ms))).count();
+            (n, p)
+        };
+        let (spaced, _) = run(Pacer::new(15));
+        let (bursty, p) = run(Pacer::with_burst(15, 3));
+        // spacing alone: one frame per 180 ms window (the next is 4 ms on)
+        // plus the odd second, far under the cap
+        assert!(spaced * 1000 < 10 * span_ms as usize, "spaced {spaced} over {span_ms} ms");
+        // the allowance: the cap's 15 fps over the run, never more than the
+        // cap plus the burst
+        let cap = (span_ms * 15).div_ceil(1000) as usize + 1;
+        assert!(bursty >= cap - 2 && bursty <= cap + 3, "bursty {bursty}, cap {cap}");
+        assert_eq!(p.admitted + p.dropped, arrivals.len() as u64);
+    }
+
+    #[test]
+    fn a_burst_allowance_never_lets_the_long_run_rate_past_the_cap() {
+        // a sensor at 60 fps, evenly spaced, for ten seconds
+        for burst in [0u32, 1, 3, 8] {
+            let mut p = Pacer::with_burst(15, burst);
+            let n = (0..600u64).filter(|&i| p.admit(Micros(i * 16_667))).count() as u64;
+            // at most the cap's 150 over the run, plus the burst at the start
+            assert!(n <= 150 + u64::from(burst) + 1, "burst {burst}: {n}");
+            assert!(n >= 149, "burst {burst}: {n}");
+        }
+    }
+
+    #[test]
+    fn no_allowance_is_the_old_spacing_exactly() {
+        // the spacing rule: admitted iff an interval since the last admitted
+        let times = [0u64, 50, 99, 100, 150, 201, 230, 301, 302, 400, 399, 500];
+        let mut p = Pacer::new(10);
+        let mut last: Option<u64> = None;
+        for &ms in &times {
+            let expect = last.is_none_or(|l| ms.saturating_sub(l) >= 100);
+            if expect {
+                last = Some(ms);
+            }
+            assert_eq!(p.admit(Micros::from_millis(ms)), expect, "at {ms} ms");
+        }
     }
 }

@@ -4,6 +4,8 @@
 
 The pure half of the video package: the encoder seam with a zero-copy JPEG passthrough, MJPEG over HTTP, the RTP payloaders for H.264 and JPEG, a transport-stream muxer, and a frame-rate cap that drops honestly. `no_std`, `forbid(unsafe)`.
 
+New in 0.1.2: `http`, the camera page's HTTP shared by both tracks -- the request head, the `?t=` token gate (a cookie for the page's own stream), the page, and `PUT /update` for signed updates on Track B.
+
 The payloaders are tested **against FFmpeg in both directions** — ours rebuilds what theirs sends, and theirs reads what ours emits, byte for byte.
 
 ## Where the evidence is

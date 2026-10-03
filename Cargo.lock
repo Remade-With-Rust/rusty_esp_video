@@ -34,7 +34,7 @@ checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
 name = "rusty_esp_core"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "rusty_esp_dsp"
@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rusty_esp_video-core",
  "rusty_esp_video-esp",
@@ -73,7 +73,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rusty_esp_core",
  "rusty_esp_dsp-esp",
@@ -84,7 +84,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video-esp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rusty_esp_core",
  "rusty_esp_image-core",
@@ -160,17 +160,17 @@ dependencies = [
 ]
 
 [[patch.unused]]
-name = "rusty_esp_alloc"
-version = "0.1.1"
+name = "rusty_esp_signal-core"
+version = "0.3.0"
+
+[[patch.unused]]
+name = "rusty_esp_signal-esp"
+version = "0.3.0"
 
 [[patch.unused]]
 name = "rusty_esp_image-esp"
 version = "0.1.1"
 
 [[patch.unused]]
-name = "rusty_esp_signal-core"
-version = "0.2.0"
-
-[[patch.unused]]
-name = "rusty_esp_signal-esp"
-version = "0.2.0"
+name = "rusty_esp_alloc"
+version = "0.1.2"

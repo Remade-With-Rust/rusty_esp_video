@@ -1,0 +1,60 @@
+# Janus J1's page on Track B — XIAO ESP32-S3 Sense, no_std on esp-hal: the
+# camera page served over esp-radio and embassy-net with no ESP-IDF under
+# it, and no camera until row X5. Row X2 of the killing-C plan.
+#
+# A separate cargo project on purpose (Xtensa target, the esp toolchain,
+# build-std). Build from this directory. See README.md.
+
+[package]
+name = "xiao-s3-sense-hal-page"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Janus J1 on Track B: the camera page served from a XIAO ESP32-S3 Sense over esp-radio and embassy-net."
+
+[[bin]]
+name = "xiao-s3-sense-hal-page"
+harness = false # no cargo test harness on the chip
+
+[dependencies]
+# The chip is selected HERE (not in a library).
+esp-hal = { version = "=1.2.0", features = ["esp32s3", "unstable", "rt"] }
+esp-radio = { version = "=1.0.0-beta.1", features = ["esp32s3", "wifi", "unstable"] }
+esp-rtos = { version = "=0.4.0", features = ["esp32s3", "esp-radio", "embassy"] }
+esp-alloc = { version = "=0.11.0", features = ["esp32s3"] }
+esp-bootloader-esp-idf = { version = "=0.6.0", features = ["esp32s3"] }
+esp-println = { version = "=0.18.0", features = ["esp32s3"] }
+esp-backtrace = { version = "=0.20.0", features = ["esp32s3", "panic-handler", "println"] }
+embassy-executor = "0.10"
+embassy-time = "0.5"
+embassy-net = { version = "0.9", default-features = false, features = ["proto-ipv4", "dhcpv4", "udp", "tcp", "medium-ethernet"] }
+static_cell = "2"
+# The async `Write` the socket implements (`write_all`, `flush`).
+embedded-io-async = "0.7"
+# The I2C trait the sensor drivers are generic over; esp-hal's I2C implements it.
+embedded-hal = "1.0"
+
+# This repo's core by path (the protocol lives there, `no_std`); the siblings
+# by git URL (the umbrella's .cargo/config.toml patches them to local checkouts).
+rusty_esp_video-core = { path = "../../crates/rusty_esp_video-core", default-features = false }
+# The camera: the sensor drivers and the DVP engine (X5).
+rusty_esp_image-core = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", version = "0.1", default-features = false, features = ["alloc"] }
+rusty_esp_image-esp = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", version = "0.1", default-features = false, features = ["esp-hal"] }
+rusty_esp_signal-core = { git = "https://github.com/Remade-With-Rust/rusty_esp_signal", version = "0.2", default-features = false, features = ["alloc"] }
+rusty_esp_signal-esp = { git = "https://github.com/Remade-With-Rust/rusty_esp_signal", version = "0.2", default-features = false, features = ["embassy-net", "access-point"] }
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = "z"
+panic = "abort"
+
+# A standalone cargo project: not a member of the rusty_esp_video workspace
+# (cargo needs this table, a glob in workspace.exclude does not match).
+[workspace]

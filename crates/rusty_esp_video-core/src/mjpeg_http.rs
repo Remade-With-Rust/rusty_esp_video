@@ -128,8 +128,17 @@ impl<'a> Gate<'a> {
     /// carrying `cookie` (the `Cookie` header's value, if any), may pass.
     #[must_use]
     pub fn admits(&self, target: &str, cookie: Option<&str>) -> bool {
+        self.admits_with(target, || cookie)
+    }
+
+    /// [`Gate::admits`] with the `Cookie` header looked up only when the
+    /// query string carries no token -- the only case it is read in. The
+    /// page's parser passes its header scan here, so a request that came
+    /// with `?t=` never scans its headers for a cookie (round 2).
+    #[must_use]
+    pub fn admits_with<'c>(&self, target: &str, cookie: impl FnOnce() -> Option<&'c str>) -> bool {
         let presented = query_param(target, TOKEN_PARAM)
-            .or_else(|| cookie.and_then(|c| cookie_value(c, TOKEN_PARAM)));
+            .or_else(|| cookie().and_then(|c| cookie_value(c, TOKEN_PARAM)));
         presented.is_some_and(|p| eq_constant_time(p.as_bytes(), self.token.as_bytes()))
     }
 }
@@ -138,12 +147,27 @@ impl<'a> Gate<'a> {
 /// present. No percent-decoding: a base58 token needs none.
 #[must_use]
 pub fn query_param<'t>(target: &'t str, name: &str) -> Option<&'t str> {
-    let (_, query) = target.split_once('?')?;
-    query
-        .split('&')
-        .filter_map(|pair| pair.split_once('='))
-        .find(|(k, _)| *k == name)
-        .map(|(_, v)| v)
+    // Byte positions of the ASCII separators, not the `str` pattern
+    // iterators: the same slices (an ASCII byte is always a char boundary)
+    // without a searcher per piece (round 3; `query_param_split` is the
+    // oracle the tests hold it to).
+    let b = target.as_bytes();
+    let mut at = b.iter().position(|&c| c == b'?')? + 1;
+    loop {
+        let end = b[at..]
+            .iter()
+            .position(|&c| c == b'&')
+            .map_or(b.len(), |i| at + i);
+        if let Some(eq) = b[at..end].iter().position(|&c| c == b'=') {
+            if &target[at..at + eq] == name {
+                return Some(&target[at + eq + 1..end]);
+            }
+        }
+        if end == b.len() {
+            return None;
+        }
+        at = end + 1;
+    }
 }
 
 /// The value of cookie `name` in a `Cookie` header value (`a=1; name=v`).
@@ -172,6 +196,46 @@ pub fn eq_constant_time(a: &[u8], b: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// `query_param` before round 3: the oracle.
+    fn query_param_split<'t>(target: &'t str, name: &str) -> Option<&'t str> {
+        let (_, query) = target.split_once('?')?;
+        query
+            .split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v)
+    }
+
+    #[test]
+    fn the_byte_query_param_answers_as_the_split_one() {
+        let pieces = [
+            "t", "t=", "=t", "t=abc", "a=1", "&", "?", "==", "t=x=y", "\u{e9}=1", "t=\u{e9}", "",
+            "tt=1", " t=1",
+        ];
+        let mut n = 0;
+        for a in pieces {
+            for b in pieces {
+                for c in pieces {
+                    for target in [
+                        std::format!("/s?{a}&{b}&{c}"),
+                        std::format!("/s{a}?{b}&{c}"),
+                        std::format!("{a}{b}{c}"),
+                        std::format!("/s?{a}{b}?{c}"),
+                    ] {
+                        for name in ["t", "", "a", "\u{e9}", "tt"] {
+                            assert_eq!(
+                                super::query_param(&target, name),
+                                query_param_split(&target, name),
+                                "{target:?} {name:?}"
+                            );
+                            n += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(n > 50_000);
+    }
     use super::*;
 
     #[test]

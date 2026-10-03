@@ -6,7 +6,9 @@ target triple, linker script and (for Xtensa parts) its own toolchain. n0's
 iroh-on-ESP32 work reached the same conclusion: keep the firmware projects out
 of the library workspace so architecture-specific patches never leak into it.
 
-Naming: `<board>-<track>-<demo>/`, for example `xiao-s3-sense-idf-mjpeg/`.
+Naming: `<board>-<track>-<demo>/`, for example `xiao-s3-sense-idf-mjpeg/` (the
+camera page and stream on ESP-IDF) and `xiao-s3-sense-hal-page/` (the page on
+Track B, over esp-radio and embassy-net, until the camera follows).
 
 | Track | Generate with | Target |
 |---|---|---|

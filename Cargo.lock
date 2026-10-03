@@ -162,3 +162,15 @@ dependencies = [
 [[patch.unused]]
 name = "rusty_esp_alloc"
 version = "0.1.1"
+
+[[patch.unused]]
+name = "rusty_esp_image-esp"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "rusty_esp_signal-core"
+version = "0.2.0"
+
+[[patch.unused]]
+name = "rusty_esp_signal-esp"
+version = "0.2.0"

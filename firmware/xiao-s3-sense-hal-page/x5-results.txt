@@ -1,0 +1,50 @@
+﻿== X5 stream, 2026-09-30T23:27:39.5664630Z ==
+  metric=ffmpeg-decoded-frames secs=60 oracle=ffmpeg+ffprobe laptop=one-radio-offline-batch
+[ok] ffmpeg: decoder and frame counter
+[ok] ffprobe: geometry oracle
+[ok] passphrase file: F:\coding\janus\rusty_esp_video\firmware\xiao-s3-sense-idf-mjpeg\ap-pass.txt, 14 characters (8-63 needed; value never read aloud)
+[ok] passphrase encoding: plain UTF-8 without BOM: True (14 bytes for 14 characters)
+[ok] espino: F:\jt-espino\release\espino.exe (the board's own frame count comes over serial)
+[ok] network visible: janus-cam in the scan
+[ok] current profile: will return to 'FBI Surveillance Van'
+[ok] profile added: key not shown, temp file deleted
+watching the board on COM4
+[ok] joined: State                  : connected; SSID                   : janus-cam; AP BSSID               : 6a:ee:8f:51:74:64; Band                   : 2.4 GHz; Channel                : 1; Signal                 : 87%
+[ok] board reachable: laptop=192.168.71.50 board=192.168.71.1 port=80
+[ok] ping: 10 of 10 answered: min 1 mean 9.1 max 60 ms
+[ok] page: GET / -> 200
+[ok] ffprobe: mjpeg,320,240,yuvj422p
+[ok] stream: ffmpeg decoded 1500 frames in 55.5 s = 27.043 fps
+[ok] throughput: 1107291 bytes of multipart in 10 s = 108.1 KiB/s
+link: Band                   : 2.4 GHz; Channel                : 1; Radio type             : 802.11n; Receive rate (Mbps)    : 150; Transmit rate (Mbps)   : 135; Signal                 : 95%
+[ok] returned: to 'FBI Surveillance Van'
+== the board's PAGE lines ==
+  PAGE sensor=OV3660 configured=Ok(())
+  PAGE hosting=janus-cam auth=wpa2 stations=4
+  PAGE ip=192.168.71.1 url=http://192.168.71.1/ stream=http://192.168.71.1/stream join_ms=949 dhcp_ms=949
+  PAGE station=joined aid=1
+  PAGE served=bad-request bytes=66 written=true connections=1
+  PAGE served=index bytes=352 written=true connections=2
+  PAGE stream frames=7 bytes=27956 us=32815 fps_milli=213317 grab_errors=0 skipped=11602 timeouts=0 restarts=0 false_eoi=0
+  PAGE streaming frames=100 bytes=446432 secs=3
+  PAGE streaming frames=200 bytes=892879 secs=7
+  PAGE streaming frames=300 bytes=1339152 secs=11
+  PAGE streaming frames=400 bytes=1784801 secs=14
+  PAGE streaming frames=500 bytes=2230819 secs=18
+  PAGE streaming frames=600 bytes=2676170 secs=21
+  PAGE streaming frames=700 bytes=3121473 secs=25
+  PAGE streaming frames=800 bytes=3567688 secs=29
+  PAGE streaming frames=900 bytes=4013156 secs=32
+  PAGE streaming frames=1000 bytes=4458471 secs=36
+  PAGE streaming frames=1100 bytes=4904221 secs=39
+  PAGE streaming frames=1200 bytes=5349663 secs=43
+  PAGE streaming frames=1300 bytes=5795897 secs=47
+  PAGE streaming frames=1400 bytes=6241965 secs=50
+  PAGE streaming frames=1500 bytes=6688240 secs=54
+  PAGE stream frames=1504 bytes=6706116 us=54485618 fps_milli=27603 grab_errors=0 skipped=2686213 timeouts=0 restarts=1 false_eoi=0
+  PAGE streaming frames=100 bytes=446350 secs=3
+  PAGE streaming frames=200 bytes=891570 secs=7
+  PAGE stream frames=254 bytes=1132182 us=9067588 fps_milli=28011 grab_errors=0 skipped=3139769 timeouts=0 restarts=1 false_eoi=0
+  PAGE station=left aid=1
+[ok] self-metric: the board says 254 frames at 28.011 fps
+[ok] self-metric, longest stream: the board says 1504 frames at 27.603 fps for the 60 s arm (the line above is the 10 s throughput pass; the runner now picks the longest)

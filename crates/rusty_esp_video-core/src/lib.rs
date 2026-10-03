@@ -34,6 +34,7 @@ pub mod annexb;
 pub mod encoder;
 #[cfg(feature = "h264")]
 pub mod h264;
+pub mod http;
 #[cfg(feature = "jpeg")]
 pub mod jpeg;
 pub mod mjpeg_http;

@@ -293,14 +293,17 @@ fn rust_client_reads_valid_jpeg_parts_and_index_and_404() {
     let (stats, served) = rx.recv().unwrap();
     assert_eq!(stats.connections, 3);
     assert_eq!(stats.streams, 1);
+    // at least what the client read and checked: whether one more frame
+    // left the server before it saw the close is a race (it failed 2 runs
+    // in 5 at `>= 5`)
     assert!(
-        matches!(served[0], Served::Stream { frames } if frames >= 5),
+        matches!(served[0], Served::Stream { frames } if frames >= 4),
         "{:?}",
         served[0]
     );
     assert_eq!(served[1], Served::Index);
     assert_eq!(served[2], Served::NotFound);
-    assert!(stats.frames >= 5);
+    assert!(stats.frames >= 4, "the same race as above");
 }
 
 #[test]

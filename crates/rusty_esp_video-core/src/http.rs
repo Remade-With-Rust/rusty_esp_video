@@ -39,6 +39,10 @@ pub enum Path {
     Stream,
     /// `/update`: a signed firmware image, `PUT` by the owner (X7).
     Update,
+    /// `/setup`: the setup session over the device's own page (the setup
+    /// protocol's section 11.2, the experiments plan's E7): `GET` is
+    /// Discover, `POST` one message.
+    Setup,
     /// Anything else: a `404`.
     Other,
 }
@@ -63,6 +67,19 @@ pub enum Request {
         admitted: bool,
         /// `Content-Length`, if the head had it.
         content_length: Option<u64>,
+    },
+    /// A `POST`, gated like a `GET`: only `/setup` takes one. Its body is
+    /// `content_length` bytes behind the head.
+    Post {
+        /// Where it points.
+        path: Path,
+        /// Whether it may do what it asked.
+        admitted: bool,
+        /// `Content-Length`, if the head had it.
+        content_length: Option<u64>,
+        /// `X-Setup-Session`'s value, as sent, when it is 16 bytes long
+        /// (the setup carrier checks that they are hex digits).
+        setup_session: Option<[u8; 16]>,
     },
     /// Any other method: a `405`.
     Other,
@@ -208,7 +225,7 @@ pub fn parse_request(head: &[u8], gate: Option<&Gate<'_>>) -> Option<Request> {
         let mut parts = line.split_whitespace();
         (parts.next()?, parts.next()?)
     };
-    if method != "GET" && method != "PUT" {
+    if method != "GET" && method != "PUT" && method != "POST" {
         return Some(Request::Other);
     }
     let admitted = match gate {
@@ -220,6 +237,7 @@ pub fn parse_request(head: &[u8], gate: Option<&Gate<'_>>) -> Option<Request> {
         "/stream" => Path::Stream,
         "/" | "/index.html" => Path::Index,
         "/update" => Path::Update,
+        "/setup" => Path::Setup,
         _ => Path::Other,
     };
     if method == "PUT" {
@@ -231,7 +249,48 @@ pub fn parse_request(head: &[u8], gate: Option<&Gate<'_>>) -> Option<Request> {
             content_length,
         });
     }
+    if method == "POST" {
+        let content_length =
+            header(text, "content-length").and_then(|value| value.trim().parse().ok());
+        let setup_session = header(text, "x-setup-session")
+            .map(str::trim)
+            .and_then(|v| <[u8; 16]>::try_from(v.as_bytes()).ok());
+        return Some(Request::Post {
+            path,
+            admitted,
+            content_length,
+            setup_session,
+        });
+    }
     Some(Request::Get { path, admitted })
+}
+
+/// A binary response in full: the status line, the headers, `body` as
+/// `application/octet-stream`. What `/setup` answers with: the setup
+/// session's message, with the HTTP status its carrier gives it (200, or
+/// the 4xx an `Error` maps to).
+pub fn write_octets(sink: &mut impl PacketSink, code: u16, body: &[u8]) -> Result<()> {
+    let reason = match code {
+        200 => "OK",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        409 => "Conflict",
+        _ => "Error",
+    };
+    let mut num = [0u8; 20];
+    sink.write(b"HTTP/1.1 ")?;
+    let n = fmt_u64(u64::from(code), &mut num);
+    sink.write(n.as_bytes())?;
+    sink.write(b" ")?;
+    sink.write(reason.as_bytes())?;
+    sink.write(
+        b"\r\nContent-Type: application/octet-stream\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: ",
+    )?;
+    let len = fmt_u64(body.len() as u64, &mut num);
+    sink.write(len.as_bytes())?;
+    sink.write(b"\r\n\r\n")?;
+    sink.write(body)
 }
 
 /// Where the body starts in a head buffer that may already hold some of it:
@@ -433,7 +492,7 @@ mod tests {
         let mut parts = line.split_whitespace();
         let method = parts.next()?;
         let target = parts.next()?;
-        if method != "GET" && method != "PUT" {
+        if method != "GET" && method != "PUT" && method != "POST" {
             return Some(Request::Other);
         }
         let admitted = match gate {
@@ -447,6 +506,7 @@ mod tests {
             "/stream" => Path::Stream,
             "/" | "/index.html" => Path::Index,
             "/update" => Path::Update,
+            "/setup" => Path::Setup,
             _ => Path::Other,
         };
         if method == "PUT" {
@@ -456,6 +516,19 @@ mod tests {
                 path,
                 admitted,
                 content_length,
+            });
+        }
+        if method == "POST" {
+            let content_length =
+                header(text, "content-length").and_then(|value| value.trim().parse().ok());
+            let setup_session = header(text, "x-setup-session")
+                .map(str::trim)
+                .and_then(|v| <[u8; 16]>::try_from(v.as_bytes()).ok());
+            return Some(Request::Post {
+                path,
+                admitted,
+                content_length,
+                setup_session,
             });
         }
         Some(Request::Get { path, admitted })
@@ -622,7 +695,17 @@ mod tests {
             get(Path::Stream)
         );
         assert_eq!(parse("GET /favicon.ico HTTP/1.1\r\n\r\n"), get(Path::Other));
-        assert_eq!(parse("POST / HTTP/1.1\r\n\r\n"), Some(Request::Other));
+        // a POST is parsed (only /setup takes one; the server refuses the rest)
+        assert_eq!(
+            parse("POST / HTTP/1.1\r\n\r\n"),
+            Some(Request::Post {
+                path: Path::Index,
+                admitted: true,
+                content_length: None,
+                setup_session: None,
+            })
+        );
+        assert_eq!(parse("DELETE / HTTP/1.1\r\n\r\n"), Some(Request::Other));
         assert_eq!(parse("\r\n\r\n"), None);
         assert_eq!(parse("GET\r\n\r\n"), None);
         assert_eq!(parse_request(b"GET /\xff HTTP/1.1\r\n\r\n", None), None);
@@ -703,5 +786,59 @@ mod tests {
                 .unwrap()
                 .contains("Allow: GET\r\n")
         );
+    }
+
+    #[test]
+    fn a_setup_post_carries_its_session_and_length() {
+        let head = b"POST /setup HTTP/1.1\r\nHost: 192.168.71.1\r\nContent-Type: application/octet-stream\r\nX-Setup-Session: 00112233445566aa\r\nContent-Length: 67\r\n\r\n\x01\x01";
+        assert_eq!(
+            parse_request(head, None),
+            Some(Request::Post {
+                path: Path::Setup,
+                admitted: true,
+                content_length: Some(67),
+                setup_session: Some(*b"00112233445566aa"),
+            })
+        );
+        // the body starts right behind the head, bytes and all
+        assert_eq!(&head[body_offset(head).unwrap()..], b"\x01\x01");
+        // GET /setup is Discover
+        assert_eq!(
+            parse_request(b"GET /setup HTTP/1.1\r\n\r\n", None),
+            Some(Request::Get {
+                path: Path::Setup,
+                admitted: true
+            })
+        );
+        // a session name of another length is not passed on
+        let short = b"POST /setup HTTP/1.1\r\nX-Setup-Session: 0011\r\nContent-Length: 3\r\n\r\n";
+        assert!(matches!(
+            parse_request(short, None),
+            Some(Request::Post {
+                setup_session: None,
+                ..
+            })
+        ));
+        // a POST elsewhere is still a POST, which the server refuses
+        assert!(matches!(
+            parse_request(b"POST /stream HTTP/1.1\r\n\r\n", None),
+            Some(Request::Post {
+                path: Path::Stream,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_setup_answer_is_octets_with_its_status() {
+        let mut buf = [0u8; 256];
+        let mut sink = crate::sink::SliceSink::new(&mut buf);
+        write_octets(&mut sink, 409, &[1, 0x7f, 3]).unwrap();
+        let n = sink.len();
+        let text = &buf[..n];
+        assert!(text.starts_with(b"HTTP/1.1 409 Conflict\r\n"));
+        let content_type = b"Content-Type: application/octet-stream";
+        assert!(text.windows(content_type.len()).any(|w| w == content_type));
+        assert!(text.ends_with(b"Content-Length: 3\r\n\r\n\x01\x7f\x03"));
     }
 }

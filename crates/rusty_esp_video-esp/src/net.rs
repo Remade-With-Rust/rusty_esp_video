@@ -166,8 +166,10 @@ impl MjpegHttpServer {
                 stats.other += 1;
                 Ok(Served::Index)
             }
+            // the setup page is a Track B cell's (E7)
             Request::Get {
-                path: Path::Other, ..
+                path: Path::Other | Path::Setup,
+                ..
             } => {
                 let _ = http::write_status(&mut sink, Status::NotFound);
                 stats.other += 1;
@@ -178,7 +180,8 @@ impl MjpegHttpServer {
             Request::Get {
                 path: Path::Update, ..
             }
-            | Request::Put { .. } => {
+            | Request::Put { .. }
+            | Request::Post { .. } => {
                 let _ = http::write_status(&mut sink, Status::MethodNotAllowed);
                 stats.other += 1;
                 Ok(Served::MethodNotAllowed)

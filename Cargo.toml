@@ -28,12 +28,17 @@ undocumented_unsafe_blocks = "deny"
 rusty_esp_video-core = { path = "crates/rusty_esp_video-core", version = "0.1.2", default-features = false }
 rusty_esp_video-esp = { path = "crates/rusty_esp_video-esp", version = "0.1.2", default-features = false }
 
-# Siblings in the Janus family are consumed BY GIT URL so this repo deploys on
-# its own. Inside the Janus umbrella folder, `.cargo/config.toml` patches the
-# URL to the sibling checkout, so local edits are visible without a push.
-rusty_esp_core = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_core", default-features = false }
-rusty_esp_image-core = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_image", default-features = false }
-rusty_esp_dsp-esp = { version = "0.1", git = "https://github.com/Remade-With-Rust/rusty_esp_dsp", default-features = false }
+# Siblings in the Janus family are consumed by PUBLISHED VERSION, which is
+# what lets this repo deploy on its own. A git URL carrying a version
+# requirement does the opposite: a git source offers exactly one version --
+# whatever is on that branch today -- so the requirement stops resolving the
+# moment the sibling releases a new minor, and a lockfile hides it until
+# someone edits a manifest. Inside the Janus umbrella, `.cargo/config.toml`
+# patches these to the sibling checkouts, so local edits are visible without
+# a push.
+rusty_esp_core = { version = "0.1", default-features = false }
+rusty_esp_image-core = { version = "0.1", default-features = false }
+rusty_esp_dsp-esp = { version = "0.1", default-features = false }
 
 [profile.release]
 lto = "thin"

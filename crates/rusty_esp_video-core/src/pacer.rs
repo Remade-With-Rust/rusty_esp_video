@@ -230,18 +230,27 @@ mod tests {
         let arrivals: Vec<u64> = (0..200u64).map(|i| (i / 5) * 180 + (i % 5) * 4).collect();
         let span_ms = arrivals[arrivals.len() - 1] - arrivals[0];
         let run = |mut p: Pacer| {
-            let n = arrivals.iter().filter(|&&ms| p.admit(Micros::from_millis(ms))).count();
+            let n = arrivals
+                .iter()
+                .filter(|&&ms| p.admit(Micros::from_millis(ms)))
+                .count();
             (n, p)
         };
         let (spaced, _) = run(Pacer::new(15));
         let (bursty, p) = run(Pacer::with_burst(15, 3));
         // spacing alone: one frame per 180 ms window (the next is 4 ms on)
         // plus the odd second, far under the cap
-        assert!(spaced * 1000 < 10 * span_ms as usize, "spaced {spaced} over {span_ms} ms");
+        assert!(
+            spaced * 1000 < 10 * span_ms as usize,
+            "spaced {spaced} over {span_ms} ms"
+        );
         // the allowance: the cap's 15 fps over the run, never more than the
         // cap plus the burst
         let cap = (span_ms * 15).div_ceil(1000) as usize + 1;
-        assert!(bursty >= cap - 2 && bursty <= cap + 3, "bursty {bursty}, cap {cap}");
+        assert!(
+            bursty >= cap - 2 && bursty <= cap + 3,
+            "bursty {bursty}, cap {cap}"
+        );
         assert_eq!(p.admitted + p.dropped, arrivals.len() as u64);
     }
 

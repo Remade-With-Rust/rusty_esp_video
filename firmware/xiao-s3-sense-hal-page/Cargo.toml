@@ -40,10 +40,10 @@ embedded-hal = "1.0"
 # by git URL (the umbrella's .cargo/config.toml patches them to local checkouts).
 rusty_esp_video-core = { path = "../../crates/rusty_esp_video-core", default-features = false }
 # The camera: the sensor drivers and the DVP engine (X5).
-rusty_esp_image-core = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", version = "0.1", default-features = false, features = ["alloc"] }
-rusty_esp_image-esp = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", version = "0.1", default-features = false, features = ["esp-hal"] }
-rusty_esp_signal-core = { git = "https://github.com/Remade-With-Rust/rusty_esp_signal", version = "0.2", default-features = false, features = ["alloc"] }
-rusty_esp_signal-esp = { git = "https://github.com/Remade-With-Rust/rusty_esp_signal", version = "0.2", default-features = false, features = ["embassy-net", "access-point"] }
+rusty_esp_image-core = { version = "0.1", default-features = false, features = ["alloc"] }
+rusty_esp_image-esp = { version = "0.1", default-features = false, features = ["esp-hal"] }
+rusty_esp_signal-core = { version = "0.2", default-features = false, features = ["alloc"] }
+rusty_esp_signal-esp = { version = "0.2", default-features = false, features = ["embassy-net", "access-point"] }
 
 [profile.release]
 opt-level = "s"

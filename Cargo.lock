@@ -35,10 +35,14 @@ checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 [[package]]
 name = "rusty_esp_core"
 version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70563ca3f8e8ebb1b72543705030bdf152e01221b794f077c112fb4e0b681b6c"
 
 [[package]]
 name = "rusty_esp_dsp"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9301a927de1afec792f07068e9f222a5327ea5d55c4b29c53a29478d2293d951"
 dependencies = [
  "libm",
  "rusty_esp_core",
@@ -47,6 +51,8 @@ dependencies = [
 [[package]]
 name = "rusty_esp_dsp-esp"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "134eccacd3fa0e13c115c471747487035b06d4bef7a7b14e6975fd0cbca59d25"
 dependencies = [
  "libm",
  "rusty_esp_core",
@@ -56,6 +62,8 @@ dependencies = [
 [[package]]
 name = "rusty_esp_image-core"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25be251948cd3a0e1cb0d060f0ee9fe1ad1bd8c6f2a51af708c225c4341970eb"
 dependencies = [
  "embedded-hal",
  "rusty_esp_core",
@@ -160,17 +168,33 @@ dependencies = [
 ]
 
 [[patch.unused]]
-name = "rusty_esp_signal-core"
-version = "0.3.0"
+name = "rusty_esp_alloc"
+version = "0.1.2"
 
 [[patch.unused]]
-name = "rusty_esp_signal-esp"
-version = "0.3.0"
+name = "rusty_esp_core"
+version = "0.1.2"
+
+[[patch.unused]]
+name = "rusty_esp_image-core"
+version = "0.1.1"
 
 [[patch.unused]]
 name = "rusty_esp_image-esp"
 version = "0.1.1"
 
 [[patch.unused]]
-name = "rusty_esp_alloc"
-version = "0.1.2"
+name = "rusty_esp_dsp"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "rusty_esp_dsp-esp"
+version = "0.1.1"
+
+[[patch.unused]]
+name = "rusty_esp_signal-core"
+version = "0.3.0"
+
+[[patch.unused]]
+name = "rusty_esp_signal-esp"
+version = "0.3.0"

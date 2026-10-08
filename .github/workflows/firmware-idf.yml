@@ -105,9 +105,19 @@ jobs:
           cargo build --release
       # The partition table is not checked by a build -- only by a flash --
       # so an invalid one would otherwise be found on somebody's bench.
+      # Guarded on the file existing. No project in this repository ships a
+      # partitions.csv, so this step could only ever fail -- and it never
+      # ran to prove it, because the build above failed first for two years'
+      # worth of dependency reasons. Now that the build passes, an
+      # unguarded step would hold the whole workflow red over a file that
+      # was never there.
       - name: the partition table parses
         working-directory: firmware/${{ matrix.project }}
         run: |
           set -euo pipefail
+          if [ ! -f partitions.csv ]; then
+            echo "no partitions.csv in ${{ matrix.project }}: nothing to parse"
+            exit 0
+          fi
           cargo install espflash --locked --version '^4'
           espflash partition-table partitions.csv

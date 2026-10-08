@@ -40,10 +40,26 @@ embedded-hal = "1.0"
 # by git URL (the umbrella's .cargo/config.toml patches them to local checkouts).
 rusty_esp_video-core = { path = "../../crates/rusty_esp_video-core", default-features = false }
 # The camera: the sensor drivers and the DVP engine (X5).
-rusty_esp_image-core = { version = "0.1", default-features = false, features = ["alloc"] }
-rusty_esp_image-esp = { version = "0.1", default-features = false, features = ["esp-hal"] }
-rusty_esp_signal-core = { version = "0.2", default-features = false, features = ["alloc"] }
-rusty_esp_signal-esp = { version = "0.2", default-features = false, features = ["embassy-net", "access-point"] }
+# BLOCKED, and left exactly as it was on purpose (2026-10-08). This firmware
+# cannot move to published versions yet, and the reason is the limit of the
+# dependency rule in the README:
+#
+#   * it needs `rusty_esp_image_core::driver` and
+#     `rusty_esp_image_esp::hal::DvpCamera`, neither of which is in the
+#     published image 0.1.1, so image must stay a git source until released;
+#   * signal only publishes 0.3, so signal must come from crates.io;
+#   * and mixing the two DUPLICATES `rusty_esp_core` in the graph -- once
+#     from crates.io via signal, once from git via image -- which makes
+#     `Micros` two incompatible types ("there are multiple different
+#     versions of crate rusty_esp_core in the dependency graph").
+#
+# A dependency closure has to be consistently published or consistently git.
+# Releasing rusty_esp_image with `driver`/`DvpCamera` unblocks it. The
+# `firmware (xiao-s3-sense-hal-page)` job was red before this was touched.
+rusty_esp_image-core = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", version = "0.1", default-features = false, features = ["alloc"] }
+rusty_esp_image-esp = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", version = "0.1", default-features = false, features = ["esp-hal"] }
+rusty_esp_signal-core = { git = "https://github.com/Remade-With-Rust/rusty_esp_signal", version = "0.2", default-features = false, features = ["alloc"] }
+rusty_esp_signal-esp = { git = "https://github.com/Remade-With-Rust/rusty_esp_signal", version = "0.2", default-features = false, features = ["embassy-net", "access-point"] }
 
 [profile.release]
 opt-level = "s"

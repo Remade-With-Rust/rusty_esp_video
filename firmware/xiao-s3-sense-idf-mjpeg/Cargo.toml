@@ -44,9 +44,9 @@ esp-idf-sys = "0.37"
 
 # Janus crates. Siblings by git URL (the umbrella's .cargo/config.toml patches
 # them to local checkouts); this repo's own crates by path.
-rusty_esp_core = { git = "https://github.com/Remade-With-Rust/rusty_esp_core", default-features = false, features = ["std"] }
-rusty_esp_image-core = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", default-features = false, features = ["std"] }
-rusty_esp_image-esp = { git = "https://github.com/Remade-With-Rust/rusty_esp_image", default-features = false, features = ["esp-idf"] }
+rusty_esp_core = { version = "0.1", default-features = false, features = ["std"] }
+rusty_esp_image-core = { version = "0.1.2", default-features = false, features = ["std"] }
+rusty_esp_image-esp = { version = "0.1.2", default-features = false, features = ["esp-idf"] }
 rusty_esp_video-core = { path = "../../crates/rusty_esp_video-core", default-features = false, features = ["std"] }
 rusty_esp_video-esp = { path = "../../crates/rusty_esp_video-esp", default-features = false, features = ["esp-idf"] }
 

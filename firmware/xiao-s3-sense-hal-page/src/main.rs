@@ -432,9 +432,10 @@ async fn main(spawner: embassy_executor::Spawner) {
                 let _ = http::write_status(&mut sink, Status::NotFound);
                 "not-found"
             }
-            // this page takes no update: a `PUT` (the generated cells' `/update`,
-            // X7) is a method it does not serve
-            Some(Request::Put { .. }) | Some(Request::Other) => {
+            // this page takes no update and no form: a `PUT` (the generated
+            // cells' `/update`, X7) and a `POST` are both methods it does not
+            // serve
+            Some(Request::Put { .. }) | Some(Request::Post { .. }) | Some(Request::Other) => {
                 let _ = http::write_status(&mut sink, Status::MethodNotAllowed);
                 "method"
             }

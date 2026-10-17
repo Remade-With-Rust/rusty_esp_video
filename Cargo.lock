@@ -73,7 +73,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "rusty_esp_video-core",
  "rusty_esp_video-esp",
@@ -81,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "rusty_esp_core",
  "rusty_esp_dsp-esp",
@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_esp_video-esp"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "rusty_esp_core",
  "rusty_esp_image-core",
@@ -166,35 +166,3 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
-
-[[patch.unused]]
-name = "rusty_esp_alloc"
-version = "0.1.2"
-
-[[patch.unused]]
-name = "rusty_esp_core"
-version = "0.1.2"
-
-[[patch.unused]]
-name = "rusty_esp_image-core"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "rusty_esp_image-esp"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "rusty_esp_dsp"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "rusty_esp_dsp-esp"
-version = "0.1.1"
-
-[[patch.unused]]
-name = "rusty_esp_signal-core"
-version = "0.3.0"
-
-[[patch.unused]]
-name = "rusty_esp_signal-esp"
-version = "0.3.0"

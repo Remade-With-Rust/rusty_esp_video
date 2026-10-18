@@ -14,10 +14,11 @@
 
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::sync::Arc;
 use std::time::Duration;
 
 use rusty_esp_video_core::esp_core::error::{Error, Result};
-use rusty_esp_video_core::http::{self, Path, Request, Status};
+use rusty_esp_video_core::http::{self, Path, Request, Status, StatusQuery};
 pub use rusty_esp_video_core::http::{INDEX_HTML, MAX_REQUEST_BYTES, STREAM_PATH};
 use rusty_esp_video_core::mjpeg_http::{Gate, Multipart};
 use rusty_esp_video_core::sink::PacketSink;
@@ -66,16 +67,35 @@ pub enum Served {
     Forbidden,
     /// The request head was malformed or too large; a `400` was sent.
     BadRequest,
+    /// `/v1/status`, served.
+    Status,
 }
 
+/// What `/v1/status` serves: called with the request's nonce (`None` for the
+/// plain status), it returns the JSON body. The firmware's, so this server
+/// names nothing a status holds.
+pub type StatusHandler = Arc<dyn Fn(Option<[u8; 32]>) -> String + Send + Sync>;
+
 /// The MJPEG HTTP server.
-#[derive(Debug)]
 pub struct MjpegHttpServer {
     listener: TcpListener,
+    /// `/v1/status`, when the firmware gives one.
+    status: Option<StatusHandler>,
     /// Read timeout for the request head.
     pub request_timeout: Duration,
     /// The viewing token `/` and `/stream` require, if any.
     token: Option<String>,
+}
+
+impl core::fmt::Debug for MjpegHttpServer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MjpegHttpServer")
+            .field("listener", &self.listener)
+            .field("request_timeout", &self.request_timeout)
+            .field("gated", &self.token.is_some())
+            .field("status", &self.status.is_some())
+            .finish()
+    }
 }
 
 impl MjpegHttpServer {
@@ -85,12 +105,23 @@ impl MjpegHttpServer {
             listener: TcpListener::bind(addr)?,
             request_timeout: Duration::from_secs(5),
             token: None,
+            status: None,
         })
+    }
+
+    /// Serve `/v1/status` from `handler`, ungated: a home's hub reads it to
+    /// find and check the device, and has no page token. Without it the
+    /// path is a `404`.
+    #[must_use]
+    pub fn with_status(mut self, handler: StatusHandler) -> Self {
+        self.status = Some(handler);
+        self
     }
 
     /// Require `token` on `/` and `/stream` ([`Gate`]): `?t=<token>` on the
     /// URL, or the `t` cookie the index page sets when opened that way, so
-    /// the page's own `<img src="/stream">` passes. Everything else is `403`.
+    /// the page's own `<img src="/stream">` passes. `/v1/status` is never
+    /// gated; everything else is `403`.
     #[must_use]
     pub fn gated(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
@@ -129,6 +160,32 @@ impl MjpegHttpServer {
             return Ok(Served::BadRequest);
         };
         match request {
+            // ungated, ahead of the gate: the hub has no page token
+            Request::Get {
+                path: Path::Status(query),
+                ..
+            } => {
+                stats.other += 1;
+                match (&self.status, query) {
+                    (None, _) => {
+                        let _ = http::write_status(&mut sink, Status::NotFound);
+                        Ok(Served::NotFound)
+                    }
+                    (Some(_), StatusQuery::Invalid) => {
+                        let _ = http::write_status(&mut sink, Status::BadRequest);
+                        Ok(Served::BadRequest)
+                    }
+                    (Some(handler), query) => {
+                        let nonce = match query {
+                            StatusQuery::Nonce(n) => Some(n),
+                            _ => None,
+                        };
+                        let body = handler(nonce);
+                        let _ = http::write_json(&mut sink, 200, body.as_bytes());
+                        Ok(Served::Status)
+                    }
+                }
+            }
             Request::Get {
                 admitted: false, ..
             } => {

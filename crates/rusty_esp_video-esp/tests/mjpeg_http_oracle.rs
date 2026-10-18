@@ -6,7 +6,7 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::process::Command;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 
 use rusty_esp_core::error::{Error, Result};
@@ -103,7 +103,17 @@ fn spawn_gated_server(
     token: &str,
     connections: usize,
 ) -> (String, mpsc::Receiver<(ServeStats, Vec<Served>)>) {
-    let server = MjpegHttpServer::bind("127.0.0.1:0").unwrap().gated(token);
+    spawn_on(
+        MjpegHttpServer::bind("127.0.0.1:0").unwrap().gated(token),
+        connections,
+    )
+}
+
+/// Serve `connections` requests on `server` from the colour bars.
+fn spawn_on(
+    server: MjpegHttpServer,
+    connections: usize,
+) -> (String, mpsc::Receiver<(ServeStats, Vec<Served>)>) {
     let addr = server.local_addr().unwrap().to_string();
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
@@ -215,6 +225,71 @@ fn a_gated_server_refuses_without_the_token_and_the_page_sets_the_cookie() {
     assert!(matches!(served[4], Served::Stream { frames } if frames >= 1));
     assert!(matches!(served[5], Served::Stream { frames } if frames >= 1));
     assert_eq!(served[6], Served::NotFound);
+}
+
+#[test]
+fn the_status_is_served_ungated_and_its_nonce_reaches_the_firmware() {
+    const TOKEN: &str = "7Ns3kQxYbVfR2pLmZ9wHdE";
+    let hex: String = (0u8..32).map(|b| format!("{b:02x}")).collect();
+    let server = MjpegHttpServer::bind("127.0.0.1:0")
+        .unwrap()
+        .with_status(Arc::new(|nonce: Option<[u8; 32]>| match nonce {
+            None => r#"{"signed":false}"#.to_string(),
+            Some(n) => format!(r#"{{"signed":true,"last":{}}}"#, n[31]),
+        }))
+        .gated(TOKEN);
+    let (addr, rx) = spawn_on(server, 4);
+
+    // no token, behind a gated server: still served
+    let plain = request(
+        &addr,
+        "GET /v1/status HTTP/1.1\r\nHost: janus\r\n\r\n",
+        4096,
+    );
+    let plain = String::from_utf8_lossy(&plain);
+    assert!(plain.starts_with("HTTP/1.1 200 OK\r\n"), "{plain}");
+    assert!(plain.contains("Content-Type: application/json\r\n"));
+    assert!(plain.ends_with("\r\n\r\n{\"signed\":false}"), "{plain}");
+
+    let signed = request(
+        &addr,
+        &format!("GET /v1/status?nonce={hex} HTTP/1.1\r\nHost: janus\r\n\r\n"),
+        4096,
+    );
+    assert!(String::from_utf8_lossy(&signed).ends_with(r#"{"signed":true,"last":31}"#));
+
+    let bad = request(
+        &addr,
+        "GET /v1/status?nonce=00 HTTP/1.1\r\nHost: janus\r\n\r\n",
+        4096,
+    );
+    assert!(bad.starts_with(b"HTTP/1.1 400"));
+    // the page itself is still gated
+    let page = request(&addr, "GET / HTTP/1.1\r\nHost: janus\r\n\r\n", 4096);
+    assert!(page.starts_with(b"HTTP/1.1 403"));
+
+    let (_, served) = rx.recv().unwrap();
+    assert_eq!(
+        served,
+        [
+            Served::Status,
+            Served::Status,
+            Served::BadRequest,
+            Served::Forbidden
+        ]
+    );
+}
+
+#[test]
+fn without_a_status_handler_the_status_is_a_404() {
+    let (addr, rx) = spawn_server(1);
+    let r = request(
+        &addr,
+        "GET /v1/status HTTP/1.1\r\nHost: janus\r\n\r\n",
+        4096,
+    );
+    assert!(r.starts_with(b"HTTP/1.1 404"));
+    assert_eq!(rx.recv().unwrap().1, [Served::NotFound]);
 }
 
 #[test]

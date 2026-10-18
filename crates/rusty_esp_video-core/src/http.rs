@@ -43,8 +43,53 @@ pub enum Path {
     /// protocol's section 11.2, the experiments plan's E7): `GET` is
     /// Discover, `POST` one message.
     Setup,
+    /// `/v1/status`: the device's status, ungated, for a home's hub to find
+    /// and check it. Served only where the firmware gives the server a
+    /// status to serve (a `404` otherwise).
+    Status(StatusQuery),
     /// Anything else: a `404`.
     Other,
+}
+
+/// What a `/v1/status` request asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusQuery {
+    /// No query: the plain status.
+    Plain,
+    /// `?nonce=<64 lowercase hex>`: the status signed over this nonce.
+    Nonce([u8; 32]),
+    /// Any other query: a `400`.
+    Invalid,
+}
+
+/// The query of a `/v1/status` target (what follows the `?`, if anything).
+fn status_query(query: Option<&str>) -> StatusQuery {
+    let Some(q) = query else {
+        return StatusQuery::Plain;
+    };
+    if q.is_empty() {
+        return StatusQuery::Plain;
+    }
+    let Some(hex) = q.strip_prefix("nonce=") else {
+        return StatusQuery::Invalid;
+    };
+    let b = hex.as_bytes();
+    if b.len() != 64 {
+        return StatusQuery::Invalid;
+    }
+    let nibble = |c: u8| match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        _ => None,
+    };
+    let mut out = [0u8; 32];
+    for (i, o) in out.iter_mut().enumerate() {
+        match (nibble(b[2 * i]), nibble(b[2 * i + 1])) {
+            (Some(h), Some(l)) => *o = (h << 4) | l,
+            _ => return StatusQuery::Invalid,
+        }
+    }
+    StatusQuery::Nonce(out)
 }
 
 /// What a request head turned out to be.
@@ -233,11 +278,13 @@ pub fn parse_request(head: &[u8], gate: Option<&Gate<'_>>) -> Option<Request> {
         // the cookie only when the query string has no token
         Some(gate) => gate.admits_with(target, || header(text, "cookie").map(str::trim)),
     };
-    let path = match target.split('?').next().unwrap_or(target) {
+    let mut split = target.splitn(2, '?');
+    let path = match split.next().unwrap_or(target) {
         "/stream" => Path::Stream,
         "/" | "/index.html" => Path::Index,
         "/update" => Path::Update,
         "/setup" => Path::Setup,
+        "/v1/status" => Path::Status(status_query(split.next())),
         _ => Path::Other,
     };
     if method == "PUT" {
@@ -263,6 +310,28 @@ pub fn parse_request(head: &[u8], gate: Option<&Gate<'_>>) -> Option<Request> {
         });
     }
     Some(Request::Get { path, admitted })
+}
+
+/// A JSON response in full: the status line, the headers, `body` (already
+/// JSON) as `application/json`, never cached. What `/v1/status` answers.
+pub fn write_json(sink: &mut impl PacketSink, code: u16, body: &[u8]) -> Result<()> {
+    let reason = match code {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        _ => "Error",
+    };
+    let mut num = [0u8; 20];
+    sink.write(b"HTTP/1.1 ")?;
+    sink.write(fmt_u64(u64::from(code), &mut num).as_bytes())?;
+    sink.write(b" ")?;
+    sink.write(reason.as_bytes())?;
+    sink.write(
+        b"\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: ",
+    )?;
+    sink.write(fmt_u64(body.len() as u64, &mut num).as_bytes())?;
+    sink.write(b"\r\n\r\n")?;
+    sink.write(body)
 }
 
 /// A binary response in full: the status line, the headers, `body` as
@@ -382,6 +451,68 @@ pub fn write_status(sink: &mut impl PacketSink, status: Status) -> Result<()> {
         sink.write(body)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    fn get(target: &str) -> Option<Request> {
+        let head = alloc::format!("GET {target} HTTP/1.1\r\nHost: x\r\n\r\n");
+        parse_request(head.as_bytes(), None)
+    }
+
+    #[test]
+    fn the_status_path_parses_its_query() {
+        let hex: alloc::string::String = (0u8..32).map(|b| alloc::format!("{b:02x}")).collect();
+        let nonce: [u8; 32] = core::array::from_fn(|i| i as u8);
+        let path = |t: &str| match get(t) {
+            Some(Request::Get { path, .. }) => path,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(path("/v1/status"), Path::Status(StatusQuery::Plain));
+        assert_eq!(path("/v1/status?"), Path::Status(StatusQuery::Plain));
+        assert_eq!(
+            path(&alloc::format!("/v1/status?nonce={hex}")),
+            Path::Status(StatusQuery::Nonce(nonce))
+        );
+        let upper = hex.to_uppercase();
+        for bad in [
+            alloc::format!("/v1/status?nonce={upper}"),
+            alloc::format!("/v1/status?nonce={}", &hex[..62]),
+            alloc::format!("/v1/status?nonce={hex}00"),
+            alloc::format!("/v1/status?nonce={hex}&x=1"),
+            alloc::string::String::from("/v1/status?x=1"),
+        ] {
+            assert_eq!(path(&bad), Path::Status(StatusQuery::Invalid), "{bad}");
+        }
+        assert_eq!(path("/v1/statusx"), Path::Other);
+    }
+
+    #[test]
+    fn the_status_is_admitted_through_a_gate_by_the_server_not_the_parser() {
+        // the parser still reports the gate's answer; the server serves
+        // /v1/status whatever it says (rusty_esp_video-esp's serve_one)
+        let gate = Gate::new("tok");
+        let head = b"GET /v1/status HTTP/1.1\r\n\r\n";
+        assert_eq!(
+            parse_request(head, Some(&gate)),
+            Some(Request::Get {
+                path: Path::Status(StatusQuery::Plain),
+                admitted: false
+            })
+        );
+    }
+
+    #[test]
+    fn a_json_response_says_what_it_carries() {
+        let mut out = alloc::vec::Vec::new();
+        write_json(&mut out, 200, br#"{"a":1}"#).unwrap();
+        let text = core::str::from_utf8(&out).unwrap();
+        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(text.contains("Content-Type: application/json\r\n"));
+        assert!(text.contains("Content-Length: 7\r\n\r\n{\"a\":1}"));
+    }
 }
 
 #[cfg(test)]

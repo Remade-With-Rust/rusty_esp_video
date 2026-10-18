@@ -16,7 +16,7 @@ use rusty_esp_image_core::source::{ImageSource, TestPattern};
 use rusty_esp_video_core::encoder::{EncoderConfig, Passthrough, VideoEncoder};
 use rusty_esp_video_core::source::EncodedSource;
 use rusty_esp_video_esp::client::pull_stream;
-use rusty_esp_video_esp::net::{MjpegHttpServer, ServeStats, Served};
+use rusty_esp_video_esp::net::{Accepted, MjpegHttpServer, ServeStats, Served};
 
 const W: u32 = 160;
 const H: u32 = 120;
@@ -225,6 +225,72 @@ fn a_gated_server_refuses_without_the_token_and_the_page_sets_the_cookie() {
     assert!(matches!(served[4], Served::Stream { frames } if frames >= 1));
     assert!(matches!(served[5], Served::Stream { frames } if frames >= 1));
     assert_eq!(served[6], Served::NotFound);
+}
+
+/// A viewer with the page open must not hold up the status: a hub polls it
+/// with a short timeout and calls a silent device offline. `accept_one` hands
+/// the stream back, a worker plays it, and the accepting thread answers
+/// `/v1/status` and the page while the stream is still running.
+#[test]
+fn the_status_answers_while_a_stream_is_open() {
+    const TOKEN: &str = "7Ns3kQxYbVfR2pLmZ9wHdE";
+    let server = MjpegHttpServer::bind("127.0.0.1:0")
+        .unwrap()
+        .with_status(Arc::new(|_| r#"{"pair":"ready"}"#.to_string()))
+        .gated(TOKEN);
+    let addr = server.local_addr().unwrap().to_string();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut stats = ServeStats::default();
+        let mut answered = Vec::new();
+        for _ in 0..3 {
+            match server.accept_one(&mut stats).unwrap() {
+                Accepted::Answered(s) => answered.push(s),
+                Accepted::Stream(conn) => {
+                    thread::spawn(move || {
+                        let camera = JpegPattern::new();
+                        let mut enc = Passthrough::default();
+                        enc.configure(camera.geometry(), &EncoderConfig::default())
+                            .unwrap();
+                        let mut source = EncodedSource::new(camera, enc, 32 * 1024, 0).unwrap();
+                        let mut scratch = vec![0u8; 32 * 1024 + 1];
+                        let _ = conn.run(&mut source, &mut scratch, &mut ServeStats::default());
+                    });
+                }
+            }
+        }
+        tx.send(answered).unwrap();
+    });
+
+    // the viewer: the stream opened, its first frame read, the socket held
+    let mut viewer = TcpStream::connect(&addr).unwrap();
+    viewer
+        .write_all(format!("GET /stream?t={TOKEN} HTTP/1.1\r\nHost: x\r\n\r\n").as_bytes())
+        .unwrap();
+    let mut first = [0u8; 4096];
+    let n = viewer.read(&mut first).unwrap();
+    assert!(
+        first[..n].starts_with(b"HTTP/1.1 200"),
+        "the stream is live"
+    );
+
+    // with the stream still open: the status and the page's refusal, at once
+    let started = std::time::Instant::now();
+    let status = request(&addr, "GET /v1/status HTTP/1.1\r\nHost: x\r\n\r\n", 4096);
+    assert!(
+        status.starts_with(b"HTTP/1.1 200"),
+        "{}",
+        String::from_utf8_lossy(&status)
+    );
+    let page = request(&addr, "GET / HTTP/1.1\r\nHost: x\r\n\r\n", 4096);
+    assert!(page.starts_with(b"HTTP/1.1 403"));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "answered beside the stream, not after it: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(rx.recv().unwrap(), [Served::Status, Served::Forbidden]);
+    drop(viewer);
 }
 
 #[test]

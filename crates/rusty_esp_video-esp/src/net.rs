@@ -71,6 +71,53 @@ pub enum Served {
     Status,
 }
 
+/// One connection [`MjpegHttpServer::accept_one`] took.
+#[derive(Debug)]
+pub enum Accepted {
+    /// Answered in full: what it was.
+    Answered(Served),
+    /// An admitted `/stream`, not yet started: [`StreamConn::run`] it.
+    Stream(StreamConn),
+}
+
+/// An admitted `/stream` connection, handed back to run anywhere: on the
+/// accepting thread ([`MjpegHttpServer::serve_one`]) or on one of its own.
+#[derive(Debug)]
+pub struct StreamConn {
+    sink: TcpSink,
+}
+
+impl StreamConn {
+    /// Push frames from `source` until the viewer leaves (the end, not an
+    /// error) or the source fails (returned).
+    pub fn run(
+        self,
+        source: &mut impl PacketSource,
+        scratch: &mut [u8],
+        stats: &mut ServeStats,
+    ) -> Result<Served> {
+        let mut mp = Multipart::new(self.sink);
+        if mp.write_response_head().is_err() {
+            return Ok(Served::Stream { frames: 0 });
+        }
+        stats.streams += 1;
+        let mut frames = 0u64;
+        loop {
+            let packet = source.next_packet(scratch)?;
+            match mp.push(&packet) {
+                Ok(()) => {
+                    frames += 1;
+                    stats.frames += 1;
+                }
+                // The viewer closed the tab: not an error, the end.
+                Err(Error::Hardware) => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Served::Stream { frames })
+    }
+}
+
 /// What `/v1/status` serves: called with the request's nonce (`None` for the
 /// plain status), it returns the JSON body. The firmware's, so this server
 /// names nothing a status holds.
@@ -148,6 +195,18 @@ impl MjpegHttpServer {
         scratch: &mut [u8],
         stats: &mut ServeStats,
     ) -> Result<Served> {
+        match self.accept_one(stats)? {
+            Accepted::Answered(served) => Ok(served),
+            Accepted::Stream(conn) => conn.run(source, scratch, stats),
+        }
+    }
+
+    /// Take the next connection and answer it, unless it is an admitted
+    /// `/stream`: that comes back as a [`StreamConn`] for the caller to run
+    /// wherever it likes, so a viewer with the page open never holds up
+    /// `/v1/status`, the page or a refusal. [`serve_one`](Self::serve_one) is
+    /// this with the stream run in place.
+    pub fn accept_one(&self, stats: &mut ServeStats) -> Result<Accepted> {
         let (stream, _) = self.listener.accept().map_err(|_| Error::Hardware)?;
         stats.connections += 1;
         let _ = stream.set_nodelay(true);
@@ -157,7 +216,7 @@ impl MjpegHttpServer {
         let Some(request) = read_request(&mut sink.0, gate.as_ref()) else {
             let _ = http::write_status(&mut sink, Status::BadRequest);
             stats.other += 1;
-            return Ok(Served::BadRequest);
+            return Ok(Accepted::Answered(Served::BadRequest));
         };
         match request {
             // ungated, ahead of the gate: the hub has no page token
@@ -169,11 +228,11 @@ impl MjpegHttpServer {
                 match (&self.status, query) {
                     (None, _) => {
                         let _ = http::write_status(&mut sink, Status::NotFound);
-                        Ok(Served::NotFound)
+                        Ok(Accepted::Answered(Served::NotFound))
                     }
                     (Some(_), StatusQuery::Invalid) => {
                         let _ = http::write_status(&mut sink, Status::BadRequest);
-                        Ok(Served::BadRequest)
+                        Ok(Accepted::Answered(Served::BadRequest))
                     }
                     (Some(handler), query) => {
                         let nonce = match query {
@@ -182,7 +241,7 @@ impl MjpegHttpServer {
                         };
                         let body = handler(nonce);
                         let _ = http::write_json(&mut sink, 200, body.as_bytes());
-                        Ok(Served::Status)
+                        Ok(Accepted::Answered(Served::Status))
                     }
                 }
             }
@@ -191,37 +250,17 @@ impl MjpegHttpServer {
             } => {
                 let _ = http::write_status(&mut sink, Status::Forbidden);
                 stats.other += 1;
-                Ok(Served::Forbidden)
+                Ok(Accepted::Answered(Served::Forbidden))
             }
             Request::Get {
                 path: Path::Stream, ..
-            } => {
-                let mut mp = Multipart::new(sink);
-                if mp.write_response_head().is_err() {
-                    return Ok(Served::Stream { frames: 0 });
-                }
-                stats.streams += 1;
-                let mut frames = 0u64;
-                loop {
-                    let packet = source.next_packet(scratch)?;
-                    match mp.push(&packet) {
-                        Ok(()) => {
-                            frames += 1;
-                            stats.frames += 1;
-                        }
-                        // The viewer closed the tab: not an error, the end.
-                        Err(Error::Hardware) => break,
-                        Err(e) => return Err(e),
-                    }
-                }
-                Ok(Served::Stream { frames })
-            }
+            } => Ok(Accepted::Stream(StreamConn { sink })),
             Request::Get {
                 path: Path::Index, ..
             } => {
                 let _ = http::write_index(&mut sink, self.token.as_deref());
                 stats.other += 1;
-                Ok(Served::Index)
+                Ok(Accepted::Answered(Served::Index))
             }
             // the setup page is a Track B cell's (E7)
             Request::Get {
@@ -230,7 +269,7 @@ impl MjpegHttpServer {
             } => {
                 let _ = http::write_status(&mut sink, Status::NotFound);
                 stats.other += 1;
-                Ok(Served::NotFound)
+                Ok(Accepted::Answered(Served::NotFound))
             }
             // this server serves GETs; a signed update (`PUT /update`) is the
             // Track B page's, and a Track A cell takes its updates elsewhere
@@ -241,12 +280,12 @@ impl MjpegHttpServer {
             | Request::Post { .. } => {
                 let _ = http::write_status(&mut sink, Status::MethodNotAllowed);
                 stats.other += 1;
-                Ok(Served::MethodNotAllowed)
+                Ok(Accepted::Answered(Served::MethodNotAllowed))
             }
             Request::Other => {
                 let _ = http::write_status(&mut sink, Status::MethodNotAllowed);
                 stats.other += 1;
-                Ok(Served::MethodNotAllowed)
+                Ok(Accepted::Answered(Served::MethodNotAllowed))
             }
         }
     }

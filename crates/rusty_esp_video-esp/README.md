@@ -4,6 +4,8 @@
 
 The chip backends for the video package: the stream server over standard sockets — which is what ESP-IDF's `std` gives the chip, so it runs on the host unchanged — plus the pieces that are ESP-IDF only.
 
+New in 0.1.4: `MjpegHttpServer::with_status` serves `/v1/status` from the firmware's handler, ungated, ahead of the page token (a home's hub has none); without a handler it stays a `404`.
+
 | track | what it is |
 |---|---|
 | **A** | `std` on ESP-IDF — an operating system, Wi-Fi, sockets, threads |

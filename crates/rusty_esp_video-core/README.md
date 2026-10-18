@@ -4,6 +4,8 @@
 
 The pure half of the video package: the encoder seam with a zero-copy JPEG passthrough, MJPEG over HTTP, the RTP payloaders for H.264 and JPEG, a transport-stream muxer, and a frame-rate cap that drops honestly. `no_std`, `forbid(unsafe)`.
 
+New in 0.1.4: `GET /v1/status` in `http` -- `Path::Status` with the query parsed (no query, `?nonce=<64 lowercase hex>`, anything else a `400`), and `write_json` for its body.
+
 New in 0.1.3: `POST /setup` in `http` (the setup session over the device's own page, its body the session's sealed message and `X-Setup-Session` its id), and `Pacer::with_burst` (a burst from the sensor kept, the long-run rate still the cap).
 
 New in 0.1.2: `http`, the camera page's HTTP shared by both tracks -- the request head, the `?t=` token gate (a cookie for the page's own stream), the page, and `PUT /update` for signed updates on Track B.
